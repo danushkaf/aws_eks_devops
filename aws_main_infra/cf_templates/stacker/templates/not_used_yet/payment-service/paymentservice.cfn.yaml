@@ -1,0 +1,301 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS resources for the Payment service.
+Parameters:
+  EnvironmentPrefix:
+    Type: String 
+    AllowedValues:
+      - dev
+      - qa
+      - uat
+      - prod
+  VisibilityTimeOut:
+    Default: 30
+    Type: Number
+    Description: The visibility timeout in seconds for all the queues.
+  MessageRetentionPeriodInSeconds:
+    Default: 345600 #14 days
+    Type: Number
+    Description: The message retention period in seconds.
+  MaxReceiveCount:
+    Default: 4
+    Type: Number
+    Description: The max receive count means how many times the SQS queue will retry delivering msg before sending it in Dead letter queue.
+  MaxMessageSizeInBytes:
+    Default:  262144 #256 KB
+    Type: Number
+  ReceiveMessageWaitTimeSeconds:
+    Default: 20
+    Type: Number
+    Description: Set a value greater than 0 to enable long polling. Its good to use long polling
+Resources:
+
+  PaymentAckDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-payment-ack-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes  
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  PaymentAckQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-payment-ack-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt PaymentAckDLQ.Arn
+        maxReceiveCount: !Ref MaxReceiveCount 
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  SFeventDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-sf-event-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  SFeventQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-sf-event-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt SFeventDLQ.Arn
+        maxReceiveCount: !Ref MaxReceiveCount 
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  AccountCreationAckDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-account-creation-ack-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  AccountCreationAckQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-account-creation-ack-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt AccountCreationAckDLQ.Arn
+        maxReceiveCount: !Ref MaxReceiveCount 
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  AccountCreationDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-account-creation-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  AccountCreationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-account-creation-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt AccountCreationDLQ.Arn
+        maxReceiveCount: !Ref MaxReceiveCount 
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  TransferFundsDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-transfer-funds-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  TransferFundsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-transfer-funds-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt TransferFundsDLQ.Arn
+        maxReceiveCount: !Ref MaxReceiveCount 
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  PaymentTransferDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-payment-transfer-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  PaymentTransferQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-payment-transfer-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt PaymentTransferDLQ.Arn
+        maxReceiveCount: !Ref MaxReceiveCount 
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  CBInitiatePaymentDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-cb-initiate-payment-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  CBInitiatePaymentQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-cb-initiate-payment-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt CBInitiatePaymentDLQ.Arn
+        maxReceiveCount: !Ref MaxReceiveCount 
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"      
+
+
+  AccountUpdateDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-cb-account-update-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  AccountUpdateQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-cb-account-update-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt AccountUpdateDLQ.Arn
+        maxReceiveCount: !Ref MaxReceiveCount 
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"  
+
+  AccountClosureDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-account-closure-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  
+  AccountClosureQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-account-closure-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt AccountClosureDLQ.Arn
+        maxReceiveCount: !Ref MaxReceiveCount 
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"  
+
+
+Outputs:
+  TransferFundsQueue:
+    Value: !GetAtt TransferFundsQueue.Arn
+    Description: "Arn of the Transfer Funds Queue"
+  AccountCreationQueue:
+    Value: !GetAtt AccountCreationQueue.Arn
+    Description: "Arn of the account creation queue"
+  AccountCreationAckQueue:
+    Value: !GetAtt AccountCreationAckQueue.Arn
+    Description: "Arn of the AccountCreationAck queue"
+  SFeventQueue:
+    Value: !GetAtt SFeventQueue.Arn
+    Description: "Arn of the SFevent queue"
+  PaymentAckQueue:
+    Value: !GetAtt PaymentAckQueue.Arn
+    Description: "Arn of the PaymentAck queue"
+  PaymentTransferQueue:
+    Value: !GetAtt PaymentTransferQueue.Arn
+    Description: "Arn of the PaymentTransfer Queue"
+  CBInitiatePaymentQueue:
+    Value: !GetAtt CBInitiatePaymentQueue.Arn
+    Description: "Arn of the CBInitiatePayment Queue" 
+  AccountUpdateQueue:
+    Value: !GetAtt AccountUpdateQueue.Arn      

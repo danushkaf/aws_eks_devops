@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create role for shared cloudwatch log access for Fluentd
+Parameters:
+  DeploymentAccountName:
+    Type: String
+    Default: 'devqa'
+    Description: Name Of The Deployment Account
+  DeploymentAccountId:
+    Type: String
+    Description: ID Of The Deployment Account
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Configurations
+        Parameters:
+          - DeploymentAccountName
+          - DeploymentAccountId
+
+Resources:
+  CWLogsAccessRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${DeploymentAccountName}_CloudWatchLogsAccessRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+              - !Sub "arn:aws:iam::${DeploymentAccountId}:root"
+            Action:
+            - "sts:AssumeRole"
+      Path: /
+
+  CloudWatchLogsAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "${DeploymentAccountName}-CloudWatchLogsAccessPolicy"
+      Roles:
+        - Ref: CWLogsAccessRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:DescribeLogGroups"
+          - "logs:DescribeLogStreams"
+          - "logs:DescribeSubscriptionFilters"
+          - "logs:GetLogEvents"
+          - "logs:DescribeMetricFilters"
+          - "logs:FilterLogEvents"
+          - "logs:CreateLogGroup"
+          - "logs:CreateLogStream"
+          - "logs:PutLogEvents"
+          - "logs:DescribeExportTasks"
+          - "logs:DescribeDestinations"
+          Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*:*"
+
+  Route53Role:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${DeploymentAccountName}_Route53AccessRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+              - !Sub "arn:aws:iam::${DeploymentAccountId}:root"
+            Action:
+            - "sts:AssumeRole"
+      Path: /
+
+  Route53AccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "${DeploymentAccountName}-Route53AccessPolicy"
+      Roles:
+        - Ref: Route53Role
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "route53:*"
+          - "route53domains:*"
+          - "cloudformation:*"
+          Resource: "*"
+
+Outputs:
+  CWLogsAccessRoleArn:
+    Description: Fluentd Role Arn
+    Value: !GetAtt CWLogsAccessRole.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-CWLogsAccessRoleArn"
+
+  Route53RoleArn:
+    Description: Route53 Role Arn
+    Value: !GetAtt Route53Role.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-Route53RoleArn"

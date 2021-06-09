@@ -1,0 +1,329 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: RDS CRR Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  SnapshotRetentionInDays:
+    Type: Number
+    Description: Snapshot Retention in days before export to S3
+  SnapshotExpirationInDays:
+    Type: String
+    Description: Snapshot Expiration in days before get deleted
+  SnapshotArchiveInDays:
+    Type: String
+    Description: Snapshot Expiration in days before get archived
+  SnapshotIAInDays:
+    Type: String
+    Description: Snapshot Expiration in days before get archived
+  LambdaS3BucketName:
+    Type: String
+    Description: Lambda Code zip file S3 bucket name
+  SnapshotArchiveLambdaFileName:
+    Type: String
+    Description: RDS Config Lambda Code zip filename in S3
+  SnapshotDeleteLambdaFileName:
+    Type: String
+    Description: RDS Config Lambda Code zip filename in S3
+  SnapshotArchiveCron:
+    Type: String
+    Description: Cron for snapshot archive schedule
+  SnapshotDeleteCron:
+    Type: String
+    Description: Cron for snapshot delete schedule
+
+Conditions:
+  IsProdEnv: !Equals [!Ref EnvironmentPrefix, 'prod']
+
+Resources:
+  LambdaKey:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: !Sub "This is customer managed CMK for Lamda Envs at rest encrytion."
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:*"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+  S3ExportRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - export.rds.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+      Path: /
+
+  LambdaExecutionRole:
+    Condition: IsProdEnv
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonRDSFullAccess'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+      Path: /
+
+  LambdaPermissionPolicy:
+    Condition: IsProdEnv
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: LambdaExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - kms:*
+          Resource: "*"
+
+  RDSKey:
+    Condition: IsProdEnv
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: !Sub "This is ${EnvironmentPrefix} environment customer managed CMK for Redshift Data at rest encrytion."
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              AWS:
+                - !GetAtt LambdaExecutionRole.Arn
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:*"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+  S3Bucket:
+    Condition: IsProdEnv
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub "${EnvironmentPrefix}-xyz-snapshot-archive-bucket"
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: StandardIARule
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: !Ref SnapshotIAInDays
+                StorageClass: STANDARD_IA
+          - Id: GlacierRule
+            Status: Enabled
+            ExpirationInDays: !Ref SnapshotExpirationInDays
+            Transitions:
+              - TransitionInDays: !Ref SnapshotArchiveInDays
+                StorageClass: GLACIER
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  S3BucketPolicy:
+    Condition: IsProdEnv
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:*'
+            Effect: Deny
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref S3Bucket
+                - /*
+            Principal: '*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+
+  SnapshotArchiveLambdaFunction:
+    Condition: IsProdEnv
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentPrefix}-rds-snapshot-archive-lambda-func'
+      Runtime: python3.7
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      MemorySize: 1024
+      Timeout: 900
+      KmsKeyArn: !GetAtt LambdaKey.Arn
+      Environment:
+        Variables:
+          bucket_name: !Ref S3Bucket
+          retention_days: !Ref SnapshotRetentionInDays
+          kms_key_id: !Ref RDSKey
+          iam_role_arn: !GetAtt S3ExportRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaS3BucketName
+        S3Key: !Ref SnapshotArchiveLambdaFileName
+      Description: Lambda to crr rds snapshots
+
+  CloudWatchSubscriptionFunctionPermission:
+    Condition: IsProdEnv
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - "SnapshotArchiveLambdaFunction"
+          - "Arn"
+      Action: 'lambda:InvokeFunction'
+      Principal: 'events.amazonaws.com'
+      SourceArn:
+        Fn::GetAtt:
+          - "CloudWatchArchiveRule"
+          - "Arn"
+
+  CloudWatchArchiveRule:
+    Condition: IsProdEnv
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: 'Archive RDS Cluster Snapshot'
+      ScheduleExpression: !Ref SnapshotArchiveCron
+      State: 'ENABLED'
+      Targets:
+        - Id: 'Archive-RDS-Snapshots'
+          Arn:
+            Fn::GetAtt:
+              - "SnapshotArchiveLambdaFunction"
+              - "Arn"
+
+  SnapshotDeleteLambdaExecutionRole:
+    Condition: IsProdEnv
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonRDSFullAccess'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+      Path: /
+
+  SnapshotDeleteLambdaPermissionPolicy:
+    Condition: IsProdEnv
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: SnapshotDeleteLambdaExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - kms:*
+          Resource: "*"
+
+  SnapshotDeleteLambdaFunction:
+    Condition: IsProdEnv
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentPrefix}-rds-snapshot-delete-lambda-func'
+      Runtime: python3.7
+      Role: !GetAtt SnapshotDeleteLambdaExecutionRole.Arn
+      Handler: index.handler
+      KmsKeyArn: !GetAtt LambdaKey.Arn
+      MemorySize: 1024
+      Timeout: 900
+      Environment:
+        Variables:
+          retention_days: !Ref SnapshotRetentionInDays
+      Code:
+        S3Bucket: !Ref LambdaS3BucketName
+        S3Key: !Ref SnapshotDeleteLambdaFileName
+      Description: Lambda to crr rds snapshots
+
+  CloudWatchSubscriptionDeleteFunctionPermission:
+    Condition: IsProdEnv
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - "SnapshotDeleteLambdaFunction"
+          - "Arn"
+      Action: 'lambda:InvokeFunction'
+      Principal: 'events.amazonaws.com'
+      SourceArn:
+        Fn::GetAtt:
+          - "CloudWatchDeleteRule"
+          - "Arn"
+
+  CloudWatchDeleteRule:
+    Condition: IsProdEnv
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: 'Delete RDS Cluster Snapshot'
+      ScheduleExpression: !Ref SnapshotDeleteCron
+      State: 'ENABLED'
+      Targets:
+        - Id: 'Delete-RDS-Snapshots'
+          Arn:
+            Fn::GetAtt:
+              - "SnapshotDeleteLambdaFunction"
+              - "Arn"

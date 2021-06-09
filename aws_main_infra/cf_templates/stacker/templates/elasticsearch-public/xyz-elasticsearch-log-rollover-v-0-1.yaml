@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Configure ES Log rollover
+Parameters:
+  S3BucketName:
+    Type: String
+    Default: 'lambda-code-for-xyz-application-logs'
+    Description: Lambda Code zip file S3 bucket name
+  S3FileName:
+    Type: String
+    Default: 'rollover.zip'
+    Description: Lambda Code zip filename in S3
+  ESClusterDomainEP:
+    Type: String
+    Description: ES Cluster Domain Endpoint
+  EnvironmentName:
+    Type: String
+    Default: 'development'
+    Description: Environment Name
+  CronExpression:
+    Type: String
+    Default: '0 0 * * ? *'
+    Description: Cron Expression for the rule
+  LabmdaRoleArn:
+    Type: String
+    Description: Lambda Role Arn
+  MemorySizeMB:
+    Type: Number
+    Default: 1024
+    Description: Lambda max MemorySize in MB
+  LambdaTimeoutSeconds:
+    Type: Number
+    Default: 900
+    Description: Lambda timeout value
+  LambdaKeyArn:
+    Type: String
+    Description: Arn of Lambda Key
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Configurations
+        Parameters:
+          - S3BucketName
+          - S3FileName
+          - CronExpression
+          - LabmdaRoleArn
+          - ESClusterDomainEP
+          - EnvironmentName
+          - MemorySizeMB
+          - LambdaTimeoutSeconds
+Resources:
+  LogsRollover:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Runtime: nodejs12.x
+      Role: !Ref LabmdaRoleArn
+      Handler: index.handler
+      KmsKeyArn: !Ref LambdaKeyArn
+      Environment:
+        Variables:
+          elasticsearch_cluster_dns: !Ref ESClusterDomainEP
+          environment_name: !Ref EnvironmentName
+      MemorySize: !Ref MemorySizeMB
+      Timeout: !Ref LambdaTimeoutSeconds
+      Code:
+        S3Bucket: !Sub ${S3BucketName}
+        S3Key: !Sub ${S3FileName}
+      Description: Invoke a function during stack creation.
+
+  CloudWatchSubscriptionFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - "LogsRollover"
+          - "Arn"
+      Action: 'lambda:InvokeFunction'
+      Principal: 'events.amazonaws.com'
+      SourceArn:
+        Fn::GetAtt:
+          - "CloudWatchLogRolloverRule"
+          - "Arn"
+
+  CloudWatchLogRolloverRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: 'Rollover Log indices'
+      ScheduleExpression: !Sub 'cron(${CronExpression})'
+      State: 'ENABLED'
+      Targets:
+        - Id: 'Rollover-logs-daily'
+          Arn:
+            Fn::GetAtt:
+              - "LogsRollover"
+              - "Arn"

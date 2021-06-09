@@ -1,0 +1,500 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS resources for the Document service.
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    AllowedValues:
+      - dev
+      - qa
+      - uat
+      - prod
+  ReadCapacityUnits:
+    Type: Number
+    Description: Set max read capacity units.
+    Default: 2
+  MaxReadCapacityUnits:
+    Type: Number
+    Default: 6
+    Description: When auto scaling is enabled on dynamodb table, this parameter will be used to indicate max read capacity unit.
+  WriteCapacityUnits:
+    Type: Number
+    Description: Set max write capacity units.
+    Default: 2
+  MaxWriteCapacityUnits:
+    Type: Number
+    Default: 6
+    Description: When auto scaling is enabled on dynamodb table, this parameter will be used to indicate max write capacity unit.
+  RetentionDaysForDocuments:
+    Type: Number
+    Description: How long to retain the documents in S3
+    Default: 2555
+  NodeInstanceRole:
+    Type: String
+    Description: Input the ARN of the node security group of nodes in EKS cluster for this environment
+  S3BucketReplicationChoice:
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    Default: true
+  ProvisionedThroughPutChoice:
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    Description: Instead of OnDemand Provisioning for DynamoDB requests, Provisioned throughput will be used.
+    Default: true
+  ReplicationBucketArn:
+    Type: String
+    Description: Specify the ARN of the bucket where s3 bkt for documents should be replicated.
+    Default: AWS::NoValue
+  ReplicaKmsKeyID:
+    Type: String
+    Description: Specify the ARN of KMS to be used for encrypting objects in the replica. Note that this needs IAM policy to be enabled in its key policy
+    Default: AWS::NoValue
+  DrRegion:
+    Type: String
+    Description: Specify the DR region
+    Default: AWS::NoValue
+  EnablePITR:
+    AllowedValues:
+      - true
+      - false
+    Type: String
+    Default: true
+    Description: Pass true if you want point in time recovery enabled. Recommended to set true for Prod and UAT
+Conditions:
+  EnablePITRCond: !Equals [!Ref EnablePITR, true]
+  EnableS3BucketReplication: !Equals [!Ref S3BucketReplicationChoice, true ]
+  EnableProvisionedThroughput: !Equals [!Ref ProvisionedThroughPutChoice, true]
+
+Resources:
+
+  CMKForDocumentServiceS3:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: "This is customer managed CMK for document service of S3 bucket"
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+            Resource: "*"
+          -
+            Effect: Allow
+            Principal:
+              AWS: !Ref NodeInstanceRole
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+            Resource: "*"
+          - #required to let IAM based policies use kms:Decrypt and kms:Encrypt
+            Effect: Allow
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+            Resource: "*"
+      PendingWindowInDays: 7
+
+
+  IAMRoleForS3Replication:
+    Type: AWS::IAM::Role
+    Condition: EnableS3BucketReplication
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sts:AssumeRole
+
+  S3BucketForDocumentService:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketName: !Sub '${EnvironmentPrefix}-bucket-document-service' #there will be a conflict if this already exists
+      VersioningConfiguration:
+        Status: Enabled
+      #ObjectLockConfiguration: #temporary commented due to error.
+       # ObjectLockEnabled: Enabled
+       # Rule:
+       #   DefaultRetention:
+       #     Mode: GOVERNANCE
+       #     Days: !Ref RetentionDaysForDocuments
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:   #alternative: we can use customer managed KMS for encryption of bucketobjects
+          -  ServerSideEncryptionByDefault:
+               KMSMasterKeyID: !Ref CMKForDocumentServiceS3
+               SSEAlgorithm: "aws:kms" #has to be this if we are using CMK
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      ReplicationConfiguration:
+          !If
+          - EnableS3BucketReplication
+          -
+            Role: !GetAtt IAMRoleForS3Replication.Arn
+            Rules:
+                - Status: Enabled
+                  Priority: 1
+                  DeleteMarkerReplication:
+                    Status: Disabled
+                  Filter:
+                    Prefix: "" #we want everything to be replicated
+                  SourceSelectionCriteria:
+                      SseKmsEncryptedObjects:
+                        Status: Enabled
+                  Destination:
+                      Bucket: !Ref ReplicationBucketArn
+                      StorageClass: STANDARD_IA
+                      ReplicationTime:
+                        Status: Enabled
+                        Time:
+                          Minutes: 15 #only valid value is 15
+                      Metrics:
+                        Status: Enabled
+                        EventThreshold:
+                          Minutes: 15
+                      EncryptionConfiguration:
+                          ReplicaKmsKeyID: !Ref ReplicaKmsKeyID
+          - !Ref "AWS::NoValue"
+
+  S3BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref S3BucketForDocumentService
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:*'
+            Effect: Deny
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref S3BucketForDocumentService
+                - /*
+            Principal: '*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+
+  IAMPolicyForS3Replication:
+    Type: AWS::IAM::Policy
+    Condition: EnableS3BucketReplication
+    Properties:
+      PolicyName: iam-policy-for-document-s3-replication
+      Roles:
+       - !Ref IAMRoleForS3Replication
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - s3:ListBucket
+              - s3:GetReplicationConfiguration
+              - s3:GetObjectVersionForReplication
+              - s3:GetObjectVersionAcl
+            Effect: Allow
+            Resource:
+              - !GetAtt S3BucketForDocumentService.Arn
+              - !Join ["/", [ !GetAtt S3BucketForDocumentService.Arn,  '*'] ]
+
+          - Action:
+              - s3:ReplicateObject
+              - s3:ReplicateDelete
+              - s3:ReplicateTags
+              - s3:GetObjectVersionTagging
+            Effect: Allow
+            Condition:
+              StringLikeIfExists:
+                s3:x-amz-server-side-encryption:
+                  - aws:kms
+                  - AES256
+                s3:x-amz-server-side-encryption-aws-kms-key-id:
+                  - !Ref ReplicaKmsKeyID
+            Resource: !Join ["/", [ !Ref ReplicationBucketArn,  '*'] ]
+
+          - Action:
+              - kms:Decrypt
+            Effect: Allow
+            Condition:
+              StringLike:
+                kms:ViaService: !Sub "s3.${AWS::Region}.amazonaws.com"
+                kms:EncryptionContext:aws:s3:arn:
+                  - !Join ["/", [ !GetAtt S3BucketForDocumentService.Arn,  '*'] ]
+            Resource:
+              - !GetAtt CMKForDocumentServiceS3.Arn
+
+          - Action:
+              - kms:Encrypt
+            Effect: Allow
+            Condition:
+              StringLike:
+                kms:ViaService: !Sub "s3.${DrRegion}.amazonaws.com"
+                kms:EncryptionContext:aws:s3:arn:
+                  - !Join ["/", [ !Ref ReplicationBucketArn,  '*'] ]
+            Resource:
+              - !Ref ReplicaKmsKeyID
+
+
+  documentMetadataDynamoTbl:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${EnvironmentPrefix}-document_metadata'
+      BillingMode: !If [ EnableProvisionedThroughput, "PROVISIONED", "PAY_PER_REQUEST" ]
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [ EnablePITRCond , true , false ]
+      AttributeDefinitions:
+      - AttributeName: client_id
+        AttributeType: S
+      - AttributeName: document_id
+        AttributeType: S
+      - AttributeName: created_on
+        AttributeType: N
+      - AttributeName: client_id_account_number
+        AttributeType: S
+      KeySchema:
+      - AttributeName: client_id
+        KeyType: HASH
+      - AttributeName: document_id
+        KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+      LocalSecondaryIndexes:
+        - IndexName: client_id-created_on-index
+          KeySchema:
+            - AttributeName: client_id
+              KeyType: HASH
+            - AttributeName: created_on
+              KeyType: RANGE
+          Projection:
+              ProjectionType: ALL
+      GlobalSecondaryIndexes:
+        - IndexName: client_id_account_number-created_on-index
+          KeySchema:
+            - AttributeName: client_id_account_number
+              KeyType: HASH
+            - AttributeName: created_on
+              KeyType: RANGE
+          Projection:
+              ProjectionType: ALL
+          ProvisionedThroughput:
+            !If
+            - EnableProvisionedThroughput
+            -
+              ReadCapacityUnits: !Ref ReadCapacityUnits
+              WriteCapacityUnits: !Ref WriteCapacityUnits
+            - !Ref "AWS::NoValue"
+        - IndexName: client_id_application_number-created_on-index
+          KeySchema:
+            - AttributeName: client_id_account_number
+              KeyType: HASH
+            - AttributeName: created_on
+              KeyType: RANGE
+          Projection:
+              ProjectionType: ALL
+          ProvisionedThroughput:
+            !If
+            - EnableProvisionedThroughput
+            -
+              ReadCapacityUnits: !Ref ReadCapacityUnits
+              WriteCapacityUnits: !Ref WriteCapacityUnits
+            - !Ref "AWS::NoValue"
+      ProvisionedThroughput:
+        !If
+        - EnableProvisionedThroughput
+        -
+          ReadCapacityUnits: !Ref ReadCapacityUnits
+          WriteCapacityUnits: !Ref WriteCapacityUnits
+        - !Ref "AWS::NoValue"
+
+  #we are enabling autoscaling for dynamodb tables only when provisioned throughput is specified
+  #Autoscaling is recommended for provisioned,
+  #and this is also required if you are going to enable replication on DynamoDb tables.
+  DocumentTableWriteCapacityScalableTarget:
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    Condition: EnableProvisionedThroughput
+    DependsOn: documentMetadataDynamoTbl
+    Properties:
+      MaxCapacity: !Ref MaxWriteCapacityUnits
+      MinCapacity: !Ref WriteCapacityUnits
+      ResourceId: !Sub table/${documentMetadataDynamoTbl}
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: "dynamodb:table:WriteCapacityUnits"
+      ServiceNamespace: dynamodb
+
+  DocumentTableWriteScalingPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Condition: EnableProvisionedThroughput
+    Properties:
+      PolicyName: WriteAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref DocumentTableWriteCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+
+  DocumentTableReadCapacityScalableTarget:
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    Condition: EnableProvisionedThroughput
+    DependsOn: documentMetadataDynamoTbl
+    Properties:
+      MaxCapacity: !Ref MaxReadCapacityUnits
+      MinCapacity: !Ref ReadCapacityUnits
+      ResourceId: !Sub table/${documentMetadataDynamoTbl}
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: "dynamodb:table:ReadCapacityUnits"
+      ServiceNamespace: dynamodb
+
+  DocumentTableReadScalingPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Condition: EnableProvisionedThroughput
+    Properties:
+      PolicyName: ReadAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref DocumentTableReadCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+
+  DocumentGs1IndexWriteCapacityScalableTarget:
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    DependsOn: documentMetadataDynamoTbl
+    Condition: EnableProvisionedThroughput
+    Properties:
+      MaxCapacity: !Ref MaxWriteCapacityUnits
+      MinCapacity: !Ref WriteCapacityUnits
+      ResourceId: !Sub table/${documentMetadataDynamoTbl}/index/client_id_account_number-created_on-index #this has to match with GSI index in dynamoDB defined above
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: "dynamodb:index:WriteCapacityUnits"
+      ServiceNamespace: dynamodb
+
+  DocumentGs1IndexWriteScalingPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Condition: EnableProvisionedThroughput
+    Properties:
+      PolicyName: DocumentGs1Index-WriteAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref DocumentGs1IndexWriteCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+
+  DocumentGs2IndexWriteCapacityScalableTarget:
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    DependsOn: documentMetadataDynamoTbl
+    Condition: EnableProvisionedThroughput
+    Properties:
+      MaxCapacity: !Ref MaxWriteCapacityUnits
+      MinCapacity: !Ref WriteCapacityUnits
+      ResourceId: !Sub table/${documentMetadataDynamoTbl}/index/client_id_application_number-created_on-index #this has to match with GSI index in dynamoDB defined above
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: "dynamodb:index:WriteCapacityUnits"
+      ServiceNamespace: dynamodb
+
+  DocumentGs2IndexWriteScalingPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Condition: EnableProvisionedThroughput
+    Properties:
+      PolicyName: DocumentGs2Index-WriteAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref DocumentGs2IndexWriteCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+
+  DocumentGs1IndexReadCapacityScalableTarget:
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    DependsOn: documentMetadataDynamoTbl
+    Condition: EnableProvisionedThroughput
+    Properties:
+      MaxCapacity: !Ref MaxReadCapacityUnits
+      MinCapacity: !Ref ReadCapacityUnits
+      ResourceId: !Sub table/${documentMetadataDynamoTbl}/index/client_id_account_number-created_on-index #this has to match with GSI index in dynamoDB defined above
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: "dynamodb:index:ReadCapacityUnits"
+      ServiceNamespace: dynamodb
+
+  DocumentGs1IndexReadScalingPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Condition: EnableProvisionedThroughput
+    Properties:
+      PolicyName: DocumentGs1Index-ReadAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref DocumentGs1IndexReadCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+
+  DocumentGs2IndexReadCapacityScalableTarget:
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    DependsOn: documentMetadataDynamoTbl
+    Condition: EnableProvisionedThroughput
+    Properties:
+      MaxCapacity: !Ref MaxReadCapacityUnits
+      MinCapacity: !Ref ReadCapacityUnits
+      ResourceId: !Sub table/${documentMetadataDynamoTbl}/index/client_id_application_number-created_on-index #this has to match with GSI index in dynamoDB defined above
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/dynamodb.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_DynamoDBTable
+      ScalableDimension: "dynamodb:index:ReadCapacityUnits"
+      ServiceNamespace: dynamodb
+
+  DocumentGs2IndexReadScalingPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Condition: EnableProvisionedThroughput
+    Properties:
+      PolicyName: DocumentGs2Index-ReadAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref DocumentGs2IndexReadCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization

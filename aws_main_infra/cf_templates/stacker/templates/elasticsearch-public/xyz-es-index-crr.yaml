@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: ElasticSearch DR Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Description: Prefix for Env Name
+
+Resources:
+
+  ReplicationRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-es-ReplicationRole'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - s3.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+      Path: /
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${EnvironmentPrefix}-crr-es-index-snapshot-repository"
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  S3BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:*'
+            Effect: Deny
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref S3Bucket
+                - /*
+            Principal: '*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+
+Outputs:
+  S3BucketArn:
+    Description: Arn of the S3 Bucket
+    Value: !GetAtt S3Bucket.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-S3BucketArn"
+
+  ReplicationRoleArn:
+    Description: S3 CRR Role
+    Value: !GetAtt ReplicationRole.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-ReplicationRoleArn"

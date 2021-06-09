@@ -1,0 +1,469 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: OutSystems Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  NodeAutoScalingGroupDesiredCapacity:
+    Type: Number
+    Default: 1
+    Description: Desired capacity of Node Group ASG.
+  NodeAutoScalingGroupMaxSize:
+    Type: Number
+    Default: 1
+    Description: Maximum size of Node Group ASG. Set to at least 1 greater than NodeAutoScalingGroupDesiredCapacity.
+  NodeAutoScalingGroupMinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum size of Node Group ASG.
+  PolicyTargetValue:
+    Type: String
+    Default: 40
+  KeyName:
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Default: outsystems
+  NodeGroupName:
+    Type: String
+    Default: os
+    Description: Unique identifier for the Node Group.
+  NodeImageId:
+    Type: String
+    Default: ami-0d114cdd278ad2398
+    Description: Specify image ID for OS instances
+  NodeInstanceType:
+    Type: String
+    Default: t3a.large
+    AllowedValues:
+      - a1.medium
+      - a1.large
+      - a1.xlarge
+      - a1.2xlarge
+      - a1.4xlarge
+      - c1.medium
+      - c1.xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - c5.12xlarge
+      - c5.18xlarge
+      - c5.24xlarge
+      - c5.metal
+      - c5d.large
+      - c5d.xlarge
+      - c5d.2xlarge
+      - c5d.4xlarge
+      - c5d.9xlarge
+      - c5d.18xlarge
+      - c5n.large
+      - c5n.xlarge
+      - c5n.2xlarge
+      - c5n.4xlarge
+      - c5n.9xlarge
+      - c5n.18xlarge
+      - cc2.8xlarge
+      - cr1.8xlarge
+      - d2.xlarge
+      - d2.2xlarge
+      - d2.4xlarge
+      - d2.8xlarge
+      - f1.2xlarge
+      - f1.4xlarge
+      - f1.16xlarge
+      - g2.2xlarge
+      - g2.8xlarge
+      - g3s.xlarge
+      - g3.4xlarge
+      - g3.8xlarge
+      - g3.16xlarge
+      - h1.2xlarge
+      - h1.4xlarge
+      - h1.8xlarge
+      - h1.16xlarge
+      - hs1.8xlarge
+      - i2.xlarge
+      - i2.2xlarge
+      - i2.4xlarge
+      - i2.8xlarge
+      - i3.large
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - i3.16xlarge
+      - i3.metal
+      - i3en.large
+      - i3en.xlarge
+      - i3en.2xlarge
+      - i3en.3xlarge
+      - i3en.6xlarge
+      - i3en.12xlarge
+      - i3en.24xlarge
+      - m1.small
+      - m1.medium
+      - m1.large
+      - m1.xlarge
+      - m2.xlarge
+      - m2.2xlarge
+      - m2.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m4.16xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.8xlarge
+      - m5.12xlarge
+      - m5.16xlarge
+      - m5.24xlarge
+      - m5.metal
+      - m5a.large
+      - m5a.xlarge
+      - m5a.2xlarge
+      - m5a.4xlarge
+      - m5a.8xlarge
+      - m5a.12xlarge
+      - m5a.16xlarge
+      - m5a.24xlarge
+      - m5ad.large
+      - m5ad.xlarge
+      - m5ad.2xlarge
+      - m5ad.4xlarge
+      - m5ad.12xlarge
+      - m5ad.24xlarge
+      - m5d.large
+      - m5d.xlarge
+      - m5d.2xlarge
+      - m5d.4xlarge
+      - m5d.8xlarge
+      - m5d.12xlarge
+      - m5d.16xlarge
+      - m5d.24xlarge
+      - m5d.metal
+      - p2.xlarge
+      - p2.8xlarge
+      - p2.16xlarge
+      - p3.2xlarge
+      - p3.8xlarge
+      - p3.16xlarge
+      - p3dn.24xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.8xlarge
+      - r5.12xlarge
+      - r5.16xlarge
+      - r5.24xlarge
+      - r5.metal
+      - r5a.large
+      - r5a.xlarge
+      - r5a.2xlarge
+      - r5a.4xlarge
+      - r5a.8xlarge
+      - r5a.12xlarge
+      - r5a.16xlarge
+      - r5a.24xlarge
+      - r5ad.large
+      - r5ad.xlarge
+      - r5ad.2xlarge
+      - r5ad.4xlarge
+      - r5ad.12xlarge
+      - r5ad.24xlarge
+      - r5d.large
+      - r5d.xlarge
+      - r5d.2xlarge
+      - r5d.4xlarge
+      - r5d.8xlarge
+      - r5d.12xlarge
+      - r5d.16xlarge
+      - r5d.24xlarge
+      - r5d.metal
+      - t1.micro
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - t3a.nano
+      - t3a.micro
+      - t3a.small
+      - t3a.medium
+      - t3a.large
+      - t3a.xlarge
+      - t3a.2xlarge
+      - u-6tb1.metal
+      - u-9tb1.metal
+      - u-12tb1.metal
+      - x1.16xlarge
+      - x1.32xlarge
+      - x1e.xlarge
+      - x1e.2xlarge
+      - x1e.4xlarge
+      - x1e.8xlarge
+      - x1e.16xlarge
+      - x1e.32xlarge
+      - z1d.large
+      - z1d.xlarge
+      - z1d.2xlarge
+      - z1d.3xlarge
+      - z1d.6xlarge
+      - z1d.12xlarge
+      - z1d.metal
+    ConstraintDescription: Must be a valid EC2 instance type
+    Description: EC2 instance type for the node instances
+  NodeVolumeSize:
+    Type: Number
+    Default: 100
+    Description: Node volume size
+  SecondNodeVolumeSize:
+    Type: Number
+    Default: 100
+    Description: Second Node volume size
+  OutSystemsAdminDBUsername:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Admin DB Username to be used."
+  OutSystemsAdminDBPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Admin DB Password to be used."
+  OutSystemsRuntimeDBAdminUsername:
+    Type: String
+    Description: "OutSystems RuntimeDBAdmin Username to be used."
+    MaxLength: '16'
+    MinLength: '1'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsRuntimeDBAdminPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems RuntimeDBAdmin Password to be used."
+    MaxLength: '41'
+    MinLength: '8'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsRuntimeLoggingDBAdminUsername:
+    Type: String
+    Description: "OutSystems RuntimeLoggingDBAdmin Username to be used."
+    MaxLength: '16'
+    MinLength: '1'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsRuntimeLoggingDBAdminPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems RuntimeLoggingDBAdmin Password to be used."
+    MaxLength: '41'
+    MinLength: '8'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsSessionDBAdminUsername:
+    Type: String
+    Description: "OutSystems SessionDBAdmin Username to be used."
+    MaxLength: '16'
+    MinLength: '1'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsSessionDBAdminPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems SessionDBAdmin Password to be used."
+    MaxLength: '41'
+    MinLength: '8'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsPlatformPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Platform Password to be used."
+  OutSystemsServicePassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Service Password to be used."
+  OutSystemsCatalogDatabaseName:
+    AllowedPattern: "[a-zA-Z0-9-_]+"
+    ConstraintDescription: must be between 4 to 30 alphanumeric characters.
+    Description: Database name for outsystems catalog database.
+    Default: CATALOGDEV
+    MaxLength: '30'
+    MinLength: '4'
+    Type: String
+  OutSystemsSessionDatabaseName:
+    AllowedPattern: "[a-zA-Z0-9-_]+"
+    ConstraintDescription: must be between 4 to 30 alphanumeric characters.
+    Description: Database name for outsystems session database.
+    Default: xyz_sessiondev
+    MaxLength: '30'
+    MinLength: '4'
+    Type: String
+  NodeSecurityGroup:
+    Type: String
+    Description: Security Group ID
+  NodeInstanceProfile:
+    Type: String
+    Description: Node Instance Profile Arn
+  TargetGroup:
+    Type: String
+    Description: Target Group ID.
+  PrivateTargetGroup:
+    Type: String
+    Description: PrivateTarget Group ID.
+  DatabasePrimaryInstanceEndpointAddress:
+    Type: String
+    Description: Database Primary Instance EndpointAddress.
+  PrivateSubnets:
+    Type: CommaDelimitedList
+    Description: Private subnet id list.
+  ControllerAMIHostname:
+    Type: String
+    Description: Controller AMI hostname.
+
+Resources:
+
+  NodeLaunchTemplate:
+    Type: "AWS::EC2::LaunchTemplate"
+    Properties:
+      LaunchTemplateName: !Sub ${EnvironmentPrefix}-${NodeGroupName}-FrontEnd-Server-Template
+      LaunchTemplateData:
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              DeleteOnTermination: true
+              Encrypted: true
+              VolumeSize: !Ref NodeVolumeSize
+              VolumeType: gp2
+          - DeviceName: xvdd
+            Ebs:
+              DeleteOnTermination: true
+              Encrypted: true
+              VolumeSize: !Ref SecondNodeVolumeSize
+              VolumeType: gp2
+        IamInstanceProfile:
+          Arn: !Ref NodeInstanceProfile
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            Groups:
+              - !Ref NodeSecurityGroup
+            DeleteOnTermination: true
+        ImageId: !Ref NodeImageId
+        InstanceType: !Ref NodeInstanceType
+        KeyName: !Ref KeyName
+        UserData:
+          Fn::Base64: !Sub |
+            <powershell>
+            Import-Module c:\ProgramData\Amazon\EC2-Windows\Launch\Module\Ec2Launch.psm1 ; Add-Routes
+            cp "C:\\Program Files\\OutSystems\\Platform Server\\private.key.back" "C:\\Program Files\\OutSystems\\Platform Server\\private.key"
+            $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT –Uri http://169.254.169.254/latest/api/token
+            $privateIp = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri http://169.254.169.254/latest/meta-data/local-ipv4
+            $result = SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "SELECT IP_ADDRESS FROM ossys_Server WHERE NAME = '${ControllerAMIHostname}'"
+            $values = [ordered]@{ OSADMINPLACEHOLDER = "${OutSystemsAdminDBUsername}"; OSADMINPASSWORDPLACEHOLDER = "${OutSystemsAdminDBPassword}"; OSSESSIONADMINPLACEHOLDER = "${OutSystemsSessionDBAdminUsername}"; OSSESSIONADMINPASSWORDPLACEHOLDER = "${OutSystemsSessionDBAdminPassword}"; OSRUNTIMEADMINPLACEHOLDER = "${OutSystemsRuntimeDBAdminUsername}"; OSRUNTIMEADMINPASSWORDPLACEHOLDER = "${OutSystemsRuntimeDBAdminUsername}"; OSRUNTIMELOGADMINPLACEHOLDER = "${OutSystemsRuntimeLoggingDBAdminUsername}"; OSRUNTIMELOGADMINPASSWORDPLACEHOLDER = "${OutSystemsRuntimeLoggingDBAdminPassword}"; RDSENDPOINTPLACEHOLDER = "${DatabasePrimaryInstanceEndpointAddress}"; CATALOGDBPLACEHOLDER = "${OutSystemsCatalogDatabaseName}"; SESSIONDBPLACEHOLDER = "${OutSystemsSessionDatabaseName}"; SERVICEPASSWORDPLACEHOLDER = "${OutSystemsServicePassword}"; EC2LOCALIP = $privateIp }
+            foreach ($h in $values.Keys) {
+              (Get-Content -path "C:\\Users\\Administrator\\Documents\\server.hsconf" -Raw) -replace $h, $($values.Item($h)) | Set-Content -Path "C:\\Users\\Administrator\\Documents\\server.hsconf"
+            }
+            [xml]$xmlDoc = Get-Content "C:\\Users\\Administrator\\Documents\\server.hsconf"
+            $controllerIp = $result[2]
+            $controllerIp = $controllerIp.Trim()
+            $xmlDoc.EnvironmentConfiguration.NetworkConfiguration.OutgoingIPAddress = "$privateIp"
+            $xmlDoc.EnvironmentConfiguration.ServiceConfiguration.CompilerServerHostname = "$controllerIp"
+            $xmlDoc.EnvironmentConfiguration.CacheInvalidationConfiguration.ServiceHost = "$controllerIp"
+            $xmlDoc.Save("C:\\Users\\Administrator\\Documents\\server.hsconf")
+            cp "C:\\Users\\Administrator\\Documents\\server.hsconf" "C:\\Program Files\\OutSystems\\Platform Server"
+            $postfix = -join ((65..90) | Get-Random -Count 5 | % {[char]$_})
+            $ComputerName = "OSFE-$postfix"
+            Remove-ItemProperty -path "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" -name "Hostname"
+            Remove-ItemProperty -path "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" -name "NV Hostname"
+            Set-ItemProperty -path "HKLM:\SYSTEM\CurrentControlSet\Control\Computername\Computername" -name "Computername" -value $ComputerName
+            Set-ItemProperty -path "HKLM:\SYSTEM\CurrentControlSet\Control\Computername\ActiveComputername" -name "Computername" -value $ComputerName
+            Set-ItemProperty -path "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" -name "Hostname" -value $ComputerName
+            Set-ItemProperty -path "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" -name "NV Hostname" -value  $ComputerName
+            Set-ItemProperty -path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -name "AltDefaultDomainName" -value $ComputerName
+            Set-ItemProperty -path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -name "DefaultDomainName" -value $ComputerName
+            & 'C:\\Program Files\\OutSystems\\Platform Server\\ConfigurationTool.com' /SetupInstall ${OutSystemsAdminDBUsername} ${OutSystemsAdminDBPassword} ${OutSystemsAdminDBUsername} ${OutSystemsAdminDBPassword}
+            Start-Sleep -Seconds 20
+            Stop-Service 'OutSystems Deployment Controller Service'
+            Stop-Service 'OutSystems SMS Connector Service'
+            Set-Service 'OutSystems Deployment Controller Service' -StartupType Disabled
+            Set-Service 'OutSystems SMS Connector Service' -StartupType Disabled
+            Restart-Computer
+            </powershell>
+            <persist>true</persist>
+
+  NodeGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      DesiredCapacity: !Ref NodeAutoScalingGroupDesiredCapacity
+      LaunchTemplate:
+        LaunchTemplateId: !Ref NodeLaunchTemplate
+        Version: !GetAtt NodeLaunchTemplate.LatestVersionNumber
+      TargetGroupARNs:
+        - !Ref TargetGroup
+        - !Ref PrivateTargetGroup
+      MaxSize: !Ref NodeAutoScalingGroupMaxSize
+      MinSize: !Ref NodeAutoScalingGroupMinSize
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 120
+      Tags:
+        - Key: Name
+          PropagateAtLaunch: "true"
+          Value: !Sub ${EnvironmentPrefix}-${NodeGroupName}-FrontEnd-Server-Node
+        - Key: 'Patch Group'
+          PropagateAtLaunch: "true"
+          Value: Windows
+      VPCZoneIdentifier: !Ref PrivateSubnets
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: "1"
+        MinInstancesInService: !Ref NodeAutoScalingGroupDesiredCapacity
+        PauseTime: PT10M
+
+  CPUPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref NodeGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: !Ref PolicyTargetValue

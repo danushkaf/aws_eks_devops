@@ -1,0 +1,21 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: {{ .Release.Namespace }}{{ .Values.ingress.namePostfix }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "common.labels" . | indent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  rules:
+  - http:
+      paths:
+        {{ range .Values.services.endpoints }}
+        - path: {{ .context }}
+          backend:
+            serviceName: {{ .name }}
+            servicePort: {{ $.Values.services.port }}
+        {{ end }}

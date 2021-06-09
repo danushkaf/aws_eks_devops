@@ -1,0 +1,275 @@
+properties = null
+isDeployProp = false
+
+def loadProperties() {
+    properties = readProperties file: "aws_main_infra/cf_templates/stacker/conf/${Environment_Name}.env"
+}
+
+node {
+
+  stage('SCM Checkout'){
+    checkout scm
+  }
+
+  stage("Variable Declaration") {
+    script {
+      catchError {
+        dir('./') {
+          loadProperties()
+          acc_id = "${properties.infrastructure_account_id}"
+          domain_name = "${properties.domain_name}"
+          shared_account_id = "${properties.shared_account_id}"
+          env.environment_value = "${Environment_Name}"
+          env.env_prefix_value = "${properties.environment_prefix}"
+          env.dns_prefix_value = "${properties.domain_prefix}"
+          eks_cluster_name = "${properties.eks_cluster_name}"
+          amp_workspace_name = "${properties.amp_workspace_name}"
+          aws_region = "${properties.region}"
+          aws_stack_name = "${properties.main_infrastructure_stack_name}"
+          node_group_stack_name = "${properties.main_infrastructure_node_stack_name}"
+          eks_min_nodes = "${properties.asg_min}"
+          eks_max_nodes = "${properties.asg_max}"
+          ecr_repo = "${properties.ecr_repo}"
+          infrastructure_profile = "${properties.infrastructure_profile}"
+          shared_profile = "${properties.shared_profile}"
+          shared_stack_name = "${properties.shared_stack_name}"
+          db_username = "${DB_Username}"
+          db_password = "${DB_Password}"
+          stacker_bucket = "${properties.stacker_bucket}"
+          enhanced_security_enabled = "${properties.enhanced_security_enabled}"
+          datalake_redshift_cluster_enable_relocation = "${properties.datalake_redshift_cluster_enable_relocation}"
+          datalake_redshift_cluster_id = "${properties.datalake_redshift_cluster_id}"
+          mambu_username = "${MambuUsername}"
+          mambu_password = "${MambuPassword}"
+          os_db_username = "${OS_DB_Username}"
+          os_db_password = "${OS_DB_Password}"
+          os_system_admin_db_username = "${OS_Admin_DB_Username}"
+          os_system_admin_db_password = "${OS_Admin_DB_Password}"
+          os_runtime_admin_db_username = "${OS_Runtime_Admin_DB_Username}"
+          os_runtime_admin_db_password = "${OS_Runtime_Admin_DB_Password}"
+          os_runtime_log_admin_db_username = "${OS_Runtime_Log_Admin_DB_Username}"
+          os_runtime_log_admin_db_password = "${OS_Runtime_Log_Admin_DB_Password}"
+          os_session_admin_db_username = "${OS_Session_DB_Admin_Username}"
+          os_session_admin_db_password = "${OS_Session_DB_Admin_Password}"
+          os_platform_admin_db_password = "${OS_Platform_Admin_Password}"
+          os_service_password = "${OS_Service_Password}"
+          os_subdomain = "${properties.os_subdomain}"
+          datalake_redshift_username = "${DataLake_Redshift_Username}"
+          datalake_redshift_password = "${DataLake_Redshift_Password}"
+          trunarrative_credential = "${TruNarative_Credential}"
+          clearbank_credential = "${ClearBank_Credential}"
+          clearbank_account = "${ClearBank_Account}"
+          clearbank_pub_key = "${ClearBank_PublicKey}"
+          almis_sftp_public_ssh_key = "${Almis_SFTP_SSH_Key}"
+          access_sftp_public_ssh_key = "${Access_SFTP_SSH_Key}"
+          etl_mambu_username = "${ETL_Mambu_Username}"
+          etl_mambu_password = "${ETL_Mambu_Password}"
+          os_etl_admin_db_username = "${OS_ETL_Admin_DB_Username}"
+          os_etl_admin_db_password = "${OS_ETL_Admin_DB_Password}"
+          os_etl_ro_db_username = "${OS_ETL_RO_DB_Username}"
+          os_etl_ro_db_password = "${OS_ETL_RO_DB_Password}"
+          os_lifetime_system_admin_db_username = "${OS_Lifetime_Admin_DB_Username}"
+          os_lifetime_system_admin_db_password = "${OS_Lifetime_Admin_DB_Password}"
+          os_lifetime_runtime_admin_db_username = "${OS_Lifetime_Runtime_Admin_DB_Username}"
+          os_lifetime_runtime_admin_db_password = "${OS_Lifetime_Runtime_Admin_DB_Password}"
+          os_lifetime_runtime_log_admin_db_username = "${OS_Lifetime_Runtime_Log_Admin_DB_Username}"
+          os_lifetime_runtime_log_admin_db_password = "${OS_Lifetime_Runtime_Log_Admin_DB_Password}"
+          os_lifetime_session_admin_db_username = "${OS_Lifetime_Session_DB_Admin_Username}"
+          os_lifetime_session_admin_db_password = "${OS_Lifetime_Session_DB_Admin_Password}"
+          os_lifetime_platform_admin_db_password = "${OS_Lifetime_Platform_Admin_Password}"
+          os_lifetime_service_password = "${OS_Lifetime_Service_Password}"
+        }
+      }
+      echo currentBuild.result
+    }
+  }
+
+  stage("AWS Config") {
+    catchError {
+      dir("aws_main_infra/scripts/infra") {
+        sh "chmod +x ./infra_aws_config.sh"
+        sh "./infra_aws_config.sh ${acc_id} ${infrastructure_profile} ${aws_region}"
+        sh "./infra_aws_config.sh ${shared_account_id} ${shared_profile} ${aws_region}"
+        sh "rm -f ~/.kube/config"
+        }
+    }
+    echo currentBuild.result
+  }
+
+  stage("Certificate Management") {
+    if ( "${OPTION}" == 'Create') {
+      script {
+        catchError {
+          dir("aws_main_infra/scripts/infra") {
+            sh "chmod +x ./manage-certificate.sh"
+            sh "./manage-certificate.sh ${acc_id} ${shared_account_id} ${domain_name} ${environment_value} ${aws_region} ${infrastructure_profile} ${shared_profile}"
+            sh "./manage-certificate.sh ${acc_id} ${shared_account_id} ${os_subdomain} ${environment_value} ${aws_region} ${infrastructure_profile} ${shared_profile}"
+            sh "./manage-certificate.sh ${acc_id} ${shared_account_id} ${os_subdomain} ${environment_value} ${aws_region} ${infrastructure_profile} ${shared_profile} ${dns_prefix_value}"
+          }
+        }
+        echo currentBuild.result
+      }
+    }
+  }
+
+  stage("Upload Lambda Code") {
+    if ( "${OPTION}" == 'Create') {
+      script {
+        catchError {
+          dir("aws_main_infra/scripts/infra") {
+            sh "chmod +x ./compress_and_upload_to_s3.sh"
+            sh "./compress_and_upload_to_s3.sh \$(pwd)/../../lambda_code ${env_prefix_value} ${infrastructure_profile} ${aws_region}"
+          }
+        }
+        echo currentBuild.result
+      }
+    }
+  }
+
+  stage("Create AWS Infrastructure") {
+    if ( "${OPTION}" == 'Create') {
+      script {
+        catchError {
+          dir("aws_main_infra/scripts/infra") {
+            sh "chmod +x ./stacker.sh"
+            sh "./stacker.sh ${environment_value} ${acc_id} ${infrastructure_profile} ${shared_account_id} ${shared_profile} ${db_username} ${db_password} ${aws_region} ${mambu_username} ${mambu_password} ${stacker_bucket} ${os_db_username} ${os_db_password} ${os_system_admin_db_username} ${os_system_admin_db_password} ${os_runtime_admin_db_username} ${os_runtime_admin_db_password} ${os_runtime_log_admin_db_username} ${os_runtime_log_admin_db_password} ${os_session_admin_db_username} ${os_session_admin_db_password} ${os_platform_admin_db_password} ${os_service_password} ${datalake_redshift_username} ${datalake_redshift_password} '${trunarrative_credential}' '${clearbank_credential}' ${clearbank_account} '${clearbank_pub_key}' ${domain_name} ${os_subdomain} '${almis_sftp_public_ssh_key}' '${access_sftp_public_ssh_key}' ${etl_mambu_username} ${etl_mambu_password} ${os_etl_admin_db_username} ${os_etl_admin_db_password} ${os_etl_ro_db_username} ${os_etl_ro_db_password} ${os_lifetime_system_admin_db_username} ${os_lifetime_system_admin_db_password} ${os_lifetime_runtime_admin_db_username} ${os_lifetime_runtime_admin_db_password} ${os_lifetime_runtime_log_admin_db_username} ${os_lifetime_runtime_log_admin_db_password} ${os_lifetime_session_admin_db_username} ${os_lifetime_session_admin_db_password} ${os_lifetime_platform_admin_db_password} ${os_lifetime_service_password} ${dns_prefix_value}"
+          }
+        }
+        echo currentBuild.result
+      }
+    }
+  }
+
+  stage("Redshift Relocation Setting") {
+    if ( "${OPTION}" == 'Create' && "${datalake_redshift_cluster_enable_relocation}" == 'true') {
+      script {
+        catchError {
+          dir("aws_main_infra/scripts/infra") {
+            sh "aws --profile ${infrastructure_profile} redshift modify-cluster --cluster-identifier ${datalake_redshift_cluster_id} --availability-zone-relocation || echo 'already enabled'"
+          }
+        }
+        echo currentBuild.result
+      }
+    }
+  }
+
+  stage("Enhanced Security Settings") {
+    if ( "${OPTION}" == 'Create') {
+      script {
+        catchError {
+          dir("aws_main_infra/scripts/infra") {
+            sh "chmod +x ./enhanced_security.sh"
+            sh "./enhanced_security.sh ${infrastructure_profile} ${enhanced_security_enabled} ${stacker_bucket} ${aws_region}"
+          }
+        }
+        echo currentBuild.result
+      }
+    }
+  }
+
+  stage("SecurityHub Configuration") {
+    if ( "${OPTION}" == 'Create' && "${enhanced_security_enabled}" == 'true') {
+      dir("aws_main_infra/scripts/infra") {
+        catchError {
+          sh "aws --profile ${infrastructure_profile} securityhub enable-security-hub --enable-default-standards --tags '{\"Environment\": \"${environment_value}\"}' || echo 'already enabled'"
+        }
+      }
+    } else if ( "${OPTION}" == 'Delete') {
+      catchError {
+       sh "aws --profile ${infrastructure_profile} securityhub disable-security-hub || echo 'already enabled'"
+      }
+    }
+  }
+
+  stage("Log Retention Policy") {
+    if ( "${OPTION}" == 'Create') {
+      try {
+        dir("aws_main_infra/scripts/infra") {
+          sh "chmod +x ./set_log_retention_policies.sh"
+          sh "./set_log_retention_policies.sh ${shared_account_id} ${LOG_RETENTION} ${aws_region} ${shared_profile}"
+        }
+      } catch (err) {
+        currentBuild.result = 'SUCCESS'
+      }
+    }
+  }
+
+  /* commenting out ClearBank keys creation
+  stage("ClearBank Keys") {
+    catchError {
+      dir("aws_main_infra/scripts/infra") {
+        sh "chmod +x ./kms_keys.sh"
+        sh "./kms_keys.sh ${env_prefix_value}"
+      }
+    }
+    echo currentBuild.result
+  }
+  */
+
+  stage("Auth Worker Group") {
+    if ( "${OPTION}" == 'Create') {
+      dir("aws_main_infra/scripts/infra") {
+        sh "chmod +x ./auth_worker_group.sh"
+        sh "./auth_worker_group.sh ${aws_region} ${aws_stack_name} ${eks_cluster_name} ${infrastructure_profile}"
+      }
+    }
+  }
+
+  stage("Helm Infrastructure") {
+    if ( "${OPTION}" == 'Create') {
+      script {
+        catchError {
+          dir("aws_main_infra/scripts/infra") {
+            sh "chmod +x ./infra_deploy.sh"
+            sh "chmod +x ./aws-lb-controller.sh"
+            sh "./infra_deploy.sh ${aws_region} ${aws_stack_name} ${node_group_stack_name} ${eks_cluster_name} ${domain_name} ${environment_value} ${eks_min_nodes} ${eks_max_nodes} ${ecr_repo} ${shared_stack_name} ${acc_id} ${infrastructure_profile} ${shared_account_id} ${shared_profile} ${env_prefix_value} ${dns_prefix_value}"
+          }
+        }
+        echo currentBuild.result
+      }
+    } else if ( "${OPTION}" == 'Delete') {
+      catchError {
+       sh "aws --profile ${infrastructure_profile} eks --region ${aws_region} update-kubeconfig --name ${eks_cluster_name}"
+       sh "helm uninstall infrastructure"
+      }
+    }
+  }
+
+  stage("Monitoring") {
+    if ( "${OPTION}" == 'Create') {
+      script {
+        catchError {
+         sh "aws --profile ${infrastructure_profile} eks --region ${aws_region} update-kubeconfig --name ${eks_cluster_name}"
+        }
+        echo currentBuild.result
+        dir("aws_main_infra/scripts/monitoring") {
+          sh "chmod +x ./amp-setup.sh"
+          sh "./amp-setup.sh ${acc_id} ${infrastructure_profile} ${eks_cluster_name} ${amp_workspace_name}"
+        }
+      }
+    } else if ( "${OPTION}" == 'Delete') {
+      catchError {
+       sh "aws --profile ${infrastructure_profile} eks --region ${aws_region} update-kubeconfig --name ${eks_cluster_name}"
+       sh "helm uninstall prometheus-amp --namespace prometheus"
+      }
+    }
+  }
+
+  stage("Finalize") {
+    if ( "${OPTION}" == 'Delete') {
+      catchError {
+        dir("aws_main_infra") {
+          sh "stacker destroy conf/${environment_name}.env main-stacker.yaml --force --region=${aws_region}"
+        }
+      }
+      catchError {
+        dir("aws_main_infra") {
+          sh "stacker destroy conf/enhanced_security_shared.env shared-enhanced-security-stacker.yaml --force --region=${aws_region}"
+        }
+      }
+    }
+  }
+
+  step([$class: 'Mailer', notifyEveryUnstableBuild: true, recipients: '$DEFAULT_RECIPIENTS', sendToIndividuals: true])
+
+}

@@ -1,0 +1,62 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clamav
+  namespace: clamav
+  labels:
+    app: clamav
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clamav
+  template:
+    metadata:
+      labels:
+        app: clamav
+    spec:
+      volumes:
+        - name: logs
+          emptyDir: {}
+      containers:
+        - name: clamav-container
+          image: "{{ .Values.clamAVRepo }}:latest"
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              memory: '3144Mi'
+              cpu: '4'
+            requests:
+              memory: '2048Mi'
+              cpu: '1.5'
+          ports:
+            - containerPort: 3310
+          livenessProbe:
+            tcpSocket:
+              port: 3310
+            initialDelaySeconds: 300
+            timeoutSeconds: 60
+          readinessProbe:
+            tcpSocket:
+              port: 3310
+            initialDelaySeconds: 300
+            timeoutSeconds: 60
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/containers
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clamav
+  namespace: clamav
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3310
+      targetPort: 3310
+      protocol: TCP
+  selector:
+    app: clamav
+---

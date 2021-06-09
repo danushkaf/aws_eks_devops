@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: EFS Backup Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: cicd
+    Description: Prefix for Env Name
+  EFSBackupRetentionPeriod:
+    Type: Number
+    Default: 14
+    Description: Database backup retention period in days.
+  EFSBackupMoveToColdStorageAfterPeriod:
+    Type: Number
+    Default: 7
+    Description: Database backup retention period in days.
+  EFSBackupCron:
+    Type: String
+    Description: EFS Backup Cron.
+  DRVaultArn:
+    Type: String
+    Description: EFS DR Backup Vault Arn.
+
+Resources:
+
+    KMSKey:
+      Type: AWS::KMS::Key
+      Properties:
+        Description: "Encryption key for efs weekly backup store"
+        EnableKeyRotation: True
+        Enabled: True
+        KeyPolicy:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: Allow
+            Principal:
+              "AWS": { "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" }
+            Action:
+            - kms:*
+            Resource: "*"
+
+    BackupVaultWithWeeklyBackups:
+      Type: "AWS::Backup::BackupVault"
+      Properties:
+        BackupVaultName: "BackupVaultWithWeeklyBackups"
+        EncryptionKeyArn: !GetAtt KMSKey.Arn
+
+    BackupPlanWithWeeklyBackups:
+      Type: "AWS::Backup::BackupPlan"
+      Properties:
+        BackupPlan:
+          BackupPlanName: "BackupPlanWithWeeklyBackups"
+          BackupPlanRule:
+            -
+              RuleName: "RuleForWeeklyBackups"
+              CopyActions:
+                - DestinationBackupVaultArn: !Ref DRVaultArn
+                  Lifecycle:
+                    DeleteAfterDays: !Ref EFSBackupRetentionPeriod
+                    MoveToColdStorageAfterDays: !Ref EFSBackupMoveToColdStorageAfterPeriod
+              Lifecycle:
+                DeleteAfterDays: !Ref EFSBackupRetentionPeriod
+                MoveToColdStorageAfterDays: !Ref EFSBackupMoveToColdStorageAfterPeriod
+              TargetBackupVault: !Ref BackupVaultWithWeeklyBackups
+              ScheduleExpression: !Ref EFSBackupCron
+      DependsOn: BackupVaultWithWeeklyBackups
+
+    BackupRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+       AssumeRolePolicyDocument:
+         Version: "2012-10-17"
+         Statement:
+           -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "backup.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+       ManagedPolicyArns:
+         - "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup"
+
+    TagBasedBackupSelection:
+      Type: "AWS::Backup::BackupSelection"
+      Properties:
+        BackupSelection:
+          SelectionName: "TagBasedBackupSelection"
+          IamRoleArn: !GetAtt BackupRole.Arn
+          ListOfTags:
+           -
+             ConditionType: "STRINGEQUALS"
+             ConditionKey: "backup"
+             ConditionValue: "daily"
+        BackupPlanId: !Ref BackupPlanWithWeeklyBackups
+      DependsOn: BackupPlanWithWeeklyBackups

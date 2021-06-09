@@ -1,0 +1,65 @@
+#Status_Development_Popup {
+    overflow: scroll auto !important;
+    height: 100% !important;
+    width: 99% !important;
+    top: 1% !important;
+    z-index: 999 !important;
+}
+#Status_QA_Popup {
+    overflow: scroll auto !important;
+    height: 100% !important;
+    width: 99% !important;
+    top: 1% !important;
+    z-index: 999 !important;
+}
+
+#envDashboard {
+  width: 100% !important;
+}
+
+#envDashboard td {
+   font-size: large !important;
+   width: min-content !important;
+   height: 150px ;
+}
+
+
+#Status_History td {
+   height: 60px !important;
+}
+
+#Status_Development_Popup td {
+   height: 60px !important;
+}
+
+#Status_QA_Popup td {
+   height: 60px !important;
+}
+
+#Status_History {
+  z-index: 999 !important;
+  width: 100% !important;
+  height: 100% !important;
+  top: 0% !important;
+}
+
+div.advancedLink {
+  text-align: left !important;
+}
+
+table.advancedLink td.setting-main {
+    text-align: left;
+}
+
+#envDashboard td {	
+	border: 2px solid black !important;
+}
+
+body[data-model-type="org.jenkinsci.plugins.environmentdashboard.EnvDashboardView"] div#main-panel {
+    margin-left: 0px !important;
+    display: inline-block !important;
+}
+
+body[data-model-type="org.jenkinsci.plugins.environmentdashboard.EnvDashboardView"] div#main-panel p {
+    font-size: 1.5em !important;
+}

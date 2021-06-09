@@ -1,0 +1,563 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: OutSystems Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  NodeAutoScalingGroupDesiredCapacity:
+    Type: Number
+    Default: 1
+    Description: Desired capacity of Node Group ASG.
+  NodeAutoScalingGroupMaxSize:
+    Type: Number
+    Default: 1
+    Description: Maximum size of Node Group ASG. Set to at least 1 greater than NodeAutoScalingGroupDesiredCapacity.
+  NodeAutoScalingGroupMinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum size of Node Group ASG.
+  PolicyTargetValue:
+    Type: String
+    Default: 40
+  KeyName:
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Default: outsystems
+  NodeGroupName:
+    Type: String
+    Default: os
+    Description: Unique identifier for the Node Group.
+  NodeImageId:
+    Type: String
+    Default: ami-0d114cdd278ad2398
+    Description: Specify image ID for OS instances
+  NodeInstanceType:
+    Type: String
+    Default: t3a.large
+    AllowedValues:
+      - a1.medium
+      - a1.large
+      - a1.xlarge
+      - a1.2xlarge
+      - a1.4xlarge
+      - c1.medium
+      - c1.xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - c5.12xlarge
+      - c5.18xlarge
+      - c5.24xlarge
+      - c5.metal
+      - c5d.large
+      - c5d.xlarge
+      - c5d.2xlarge
+      - c5d.4xlarge
+      - c5d.9xlarge
+      - c5d.18xlarge
+      - c5n.large
+      - c5n.xlarge
+      - c5n.2xlarge
+      - c5n.4xlarge
+      - c5n.9xlarge
+      - c5n.18xlarge
+      - cc2.8xlarge
+      - cr1.8xlarge
+      - d2.xlarge
+      - d2.2xlarge
+      - d2.4xlarge
+      - d2.8xlarge
+      - f1.2xlarge
+      - f1.4xlarge
+      - f1.16xlarge
+      - g2.2xlarge
+      - g2.8xlarge
+      - g3s.xlarge
+      - g3.4xlarge
+      - g3.8xlarge
+      - g3.16xlarge
+      - h1.2xlarge
+      - h1.4xlarge
+      - h1.8xlarge
+      - h1.16xlarge
+      - hs1.8xlarge
+      - i2.xlarge
+      - i2.2xlarge
+      - i2.4xlarge
+      - i2.8xlarge
+      - i3.large
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - i3.16xlarge
+      - i3.metal
+      - i3en.large
+      - i3en.xlarge
+      - i3en.2xlarge
+      - i3en.3xlarge
+      - i3en.6xlarge
+      - i3en.12xlarge
+      - i3en.24xlarge
+      - m1.small
+      - m1.medium
+      - m1.large
+      - m1.xlarge
+      - m2.xlarge
+      - m2.2xlarge
+      - m2.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m4.16xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.8xlarge
+      - m5.12xlarge
+      - m5.16xlarge
+      - m5.24xlarge
+      - m5.metal
+      - m5a.large
+      - m5a.xlarge
+      - m5a.2xlarge
+      - m5a.4xlarge
+      - m5a.8xlarge
+      - m5a.12xlarge
+      - m5a.16xlarge
+      - m5a.24xlarge
+      - m5ad.large
+      - m5ad.xlarge
+      - m5ad.2xlarge
+      - m5ad.4xlarge
+      - m5ad.12xlarge
+      - m5ad.24xlarge
+      - m5d.large
+      - m5d.xlarge
+      - m5d.2xlarge
+      - m5d.4xlarge
+      - m5d.8xlarge
+      - m5d.12xlarge
+      - m5d.16xlarge
+      - m5d.24xlarge
+      - m5d.metal
+      - p2.xlarge
+      - p2.8xlarge
+      - p2.16xlarge
+      - p3.2xlarge
+      - p3.8xlarge
+      - p3.16xlarge
+      - p3dn.24xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.8xlarge
+      - r5.12xlarge
+      - r5.16xlarge
+      - r5.24xlarge
+      - r5.metal
+      - r5a.large
+      - r5a.xlarge
+      - r5a.2xlarge
+      - r5a.4xlarge
+      - r5a.8xlarge
+      - r5a.12xlarge
+      - r5a.16xlarge
+      - r5a.24xlarge
+      - r5ad.large
+      - r5ad.xlarge
+      - r5ad.2xlarge
+      - r5ad.4xlarge
+      - r5ad.12xlarge
+      - r5ad.24xlarge
+      - r5d.large
+      - r5d.xlarge
+      - r5d.2xlarge
+      - r5d.4xlarge
+      - r5d.8xlarge
+      - r5d.12xlarge
+      - r5d.16xlarge
+      - r5d.24xlarge
+      - r5d.metal
+      - t1.micro
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - t3a.nano
+      - t3a.micro
+      - t3a.small
+      - t3a.medium
+      - t3a.large
+      - t3a.xlarge
+      - t3a.2xlarge
+      - u-6tb1.metal
+      - u-9tb1.metal
+      - u-12tb1.metal
+      - x1.16xlarge
+      - x1.32xlarge
+      - x1e.xlarge
+      - x1e.2xlarge
+      - x1e.4xlarge
+      - x1e.8xlarge
+      - x1e.16xlarge
+      - x1e.32xlarge
+      - z1d.large
+      - z1d.xlarge
+      - z1d.2xlarge
+      - z1d.3xlarge
+      - z1d.6xlarge
+      - z1d.12xlarge
+      - z1d.metal
+    ConstraintDescription: Must be a valid EC2 instance type
+    Description: EC2 instance type for the node instances
+  NodeVolumeSize:
+    Type: Number
+    Default: 100
+    Description: Node volume size
+  SecondNodeVolumeSize:
+    Type: Number
+    Default: 100
+    Description: Second Node volume size
+  NodeSecurityGroup:
+    Type: String
+    Description: Security Group ID
+  NodeInstanceProfile:
+    Type: String
+    Description: Node Instance Profile Arn
+  TargetGroup:
+    Type: String
+    Description: Target Group ID.
+  PrivateTargetGroup:
+    Type: String
+    Description: PrivateTarget Group ID.
+  DatabasePrimaryInstanceEndpointAddress:
+    Type: String
+    Description: Database Primary Instance EndpointAddress.
+  DatabaseUsername:
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 1 to 16 alphanumeric characters.
+    Description: The database admin account user name, between 1 to 16 alphanumeric characters.
+    MaxLength: '16'
+    MinLength: '1'
+    Type: String
+  DatabasePassword:
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+    Description: The database admin account password, between 8 to 41 alphanumeric characters.
+    MaxLength: '41'
+    MinLength: '8'
+    NoEcho: 'true'
+    Type: String
+  PrivateSubnets:
+    Type: CommaDelimitedList
+    Description: Private subnet id list.
+  OutSystemsHostname:
+    Type: String
+    Description: "OutSystems Hostname to be used."
+    Default: dev.portal.xyzdev.co.
+  OutSystemsAPIHostname:
+    Type: String
+    Description: "OutSystems API Hostname to be used."
+    Default: dev-api.portal.xyz.com
+  OutSystemsCertArn:
+    Type: String
+    Description: "Certificate Arn for OutSystems LB"
+  OutSystemsAdminDBUsername:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Admin DB Username to be used."
+  OutSystemsAdminDBPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Admin DB Password to be used."
+  OutSystemsRuntimeDBAdminUsername:
+    Type: String
+    Description: "OutSystems RuntimeDBAdmin Username to be used."
+    MaxLength: '16'
+    MinLength: '1'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsRuntimeDBAdminPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems RuntimeDBAdmin Password to be used."
+    MaxLength: '41'
+    MinLength: '8'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsRuntimeLoggingDBAdminUsername:
+    Type: String
+    Description: "OutSystems RuntimeLoggingDBAdmin Username to be used."
+    MaxLength: '16'
+    MinLength: '1'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsRuntimeLoggingDBAdminPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems RuntimeLoggingDBAdmin Password to be used."
+    MaxLength: '41'
+    MinLength: '8'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsSessionDBAdminUsername:
+    Type: String
+    Description: "OutSystems SessionDBAdmin Username to be used."
+    MaxLength: '16'
+    MinLength: '1'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsSessionDBAdminPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems SessionDBAdmin Password to be used."
+    MaxLength: '41'
+    MinLength: '8'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsPlatformPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Platform Password to be used."
+  OutSystemsServicePassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Service Password to be used."
+  OutSystemsCatalogDatabaseName:
+    AllowedPattern: "[a-zA-Z0-9-_]+"
+    ConstraintDescription: must be between 4 to 30 alphanumeric characters.
+    Description: Database name for outsystems catalog database.
+    Default: CATALOGDEV
+    MaxLength: '30'
+    MinLength: '4'
+    Type: String
+  OutSystemsSessionDatabaseName:
+    AllowedPattern: "[a-zA-Z0-9-_]+"
+    ConstraintDescription: must be between 4 to 30 alphanumeric characters.
+    Description: Database name for outsystems session database.
+    Default: xyz_sessiondev
+    MaxLength: '30'
+    MinLength: '4'
+    Type: String
+  OutSystemsETLAdminDBUsername:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems ETL Admin DB Username to be used."
+  OutSystemsETLAdminDBPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems ETL Admin DB Password to be used."
+  OutSystemsETLRODBUsername:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems ETL RO DB Username to be used."
+  OutSystemsETLRODBPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems ETL RO DB Password to be used."
+
+Resources:
+  NodeLaunchTemplate:
+    Type: "AWS::EC2::LaunchTemplate"
+    Properties:
+      LaunchTemplateName: !Sub ${EnvironmentPrefix}-${NodeGroupName}-Server-Template
+      LaunchTemplateData:
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              DeleteOnTermination: true
+              Encrypted: true
+              VolumeSize: !Ref NodeVolumeSize
+              VolumeType: gp2
+          - DeviceName: xvdd
+            Ebs:
+              DeleteOnTermination: true
+              Encrypted: true
+              VolumeSize: !Ref SecondNodeVolumeSize
+              VolumeType: gp2
+        IamInstanceProfile:
+          Arn: !Ref NodeInstanceProfile
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            Groups:
+              - !Ref NodeSecurityGroup
+            DeleteOnTermination: true
+        ImageId: !Ref NodeImageId
+        InstanceType: !Ref NodeInstanceType
+        KeyName: !Ref KeyName
+        UserData:
+          Fn::Base64: !Sub |
+            <powershell>
+            Import-Module c:\ProgramData\Amazon\EC2-Windows\Launch\Module\Ec2Launch.psm1 ; Add-Routes
+            if (Test-Path C:\\Users\\Administrator\\Documents\\installed.txt -PathType Leaf) {
+              Write-Host "Installation is done on this AMI. So doing necessary changes"
+              cp "C:\\Program Files\\OutSystems\\Platform Server\\private.key.back" "C:\\Program Files\\OutSystems\\Platform Server\\private.key"
+              $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT –Uri http://169.254.169.254/latest/api/token
+              $privateIp = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri http://169.254.169.254/latest/meta-data/local-ipv4
+              $hostname = hostname
+              $hostname_lower = $hostname.ToLower()
+              [xml]$xmlDoc = Get-Content "C:\\Users\\Administrator\\Documents\\server.hsconf"
+              $xmlDoc.EnvironmentConfiguration.NetworkConfiguration.OutgoingIPAddress = "$privateIp"
+              $xmlDoc.EnvironmentConfiguration.CacheInvalidationConfiguration.ServiceHost = "$privateIp"
+              $xmlDoc.EnvironmentConfiguration.ServiceConfiguration.CompilerServerHostname = "$privateIp"
+              $xmlDoc.Save("C:\\Users\\Administrator\\Documents\\server.hsconf")
+              cp "C:\\Users\\Administrator\\Documents\\server.hsconf" "C:\\Program Files\\OutSystems\\Platform Server"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "UPDATE ossys_Server SET IP_ADDRESS = '$privateIp' WHERE NAME = '$hostname_lower'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "UPDATE ossys_Parameter SET VAL = '$privateIp' WHERE HOST = '$hostname' AND NAME = 'OutSystems.HubEdition.OutboundIPAddress'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_parameter where name = 'ClientApplicationToken'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_parameter where name = 'privateKeyValidation'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_Parameter where name = 'OutSystems.HubEdition.MobileLogin_AuthenticationHMACKey'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_Parameter where name = 'OutSystems.HubEdition.MobileLogin_AuthenticationEncryptKey'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "if exists (select * from information_schema.columns where table_name = 'ossys_PlatformSvcs_Observer') delete from ossys_PlatformSvcs_Observer"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "if exists (select * from information_schema.columns where table_name = 'ossys_cloudservices_observer') delete from ossys_cloudservices_observer"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "update ossys_Site_Property_Shared set property_value='' where site_property_definition_id in (select site_property_definition_id from ossys_Site_Property_Shared inner join ossys_Site_Property_Definition on site_property_definition_id = ossys_Site_Property_Definition.id where ss_key = '1aaec1be-d60f-43d4-ba32-391f4c3080a6' or ss_key = '441f6eef-9c7f-4bb4-b3dd-7220272269ad')"
+              Restart-Service AmazonSSMAgent
+              & 'C:\\Program Files\\OutSystems\\Platform Server\\ConfigurationTool.com' /SetupInstall ${OutSystemsAdminDBUsername} ${OutSystemsAdminDBPassword} ${OutSystemsAdminDBUsername} ${OutSystemsAdminDBPassword} /SetPlatformServerAdminPassword ${OutSystemsPlatformPassword} /RebuildSession ${OutSystemsSessionDBAdminUsername} ${OutSystemsSessionDBAdminPassword} /CreateUpgradeCacheInvalidationService /SCInstall
+              & 'C:\\Program Files\\Common Files\\OutSystems\\11.0\\OSPTool.com' /Publish "C:\\Program Files\\OutSystems\\Platform Server\\System_Components.osp" ${OutSystemsHostname} Admin ${OutSystemsPlatformPassword}
+            } else {
+              $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT –Uri http://169.254.169.254/latest/api/token
+              $privateIp = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri http://169.254.169.254/latest/meta-data/local-ipv4
+              $values = [ordered]@{ OSADMINPLACEHOLDER = "${OutSystemsAdminDBUsername}"; OSADMINPASSWORDPLACEHOLDER = "${OutSystemsAdminDBPassword}"; OSSESSIONADMINPLACEHOLDER = "${OutSystemsSessionDBAdminUsername}"; OSSESSIONADMINPASSWORDPLACEHOLDER = "${OutSystemsSessionDBAdminPassword}"; OSRUNTIMEADMINPLACEHOLDER = "${OutSystemsRuntimeDBAdminUsername}"; OSRUNTIMEADMINPASSWORDPLACEHOLDER = "${OutSystemsRuntimeDBAdminUsername}"; OSRUNTIMELOGADMINPLACEHOLDER = "${OutSystemsRuntimeLoggingDBAdminUsername}"; OSRUNTIMELOGADMINPASSWORDPLACEHOLDER = "${OutSystemsRuntimeLoggingDBAdminPassword}"; RDSENDPOINTPLACEHOLDER = "${DatabasePrimaryInstanceEndpointAddress}"; CATALOGDBPLACEHOLDER = "${OutSystemsCatalogDatabaseName}"; SESSIONDBPLACEHOLDER = "${OutSystemsSessionDatabaseName}"; SERVICEPASSWORDPLACEHOLDER = "${OutSystemsServicePassword}"; OSETLADMINPLACEHOLDER = "${OutSystemsETLAdminDBUsername}"; OSETLADMINPASSWORDPLACEHOLDER = "${OutSystemsETLAdminDBPassword}"; OSETLROPLACEHOLDER = "${OutSystemsETLRODBUsername}"; OSETLROPASSWORDPLACEHOLDER = "${OutSystemsETLRODBPassword}"; EC2LOCALIP = $privateIp }
+              foreach ($h in $values.Keys) {
+                (Get-Content -path "C:\\Users\\Administrator\\Documents\\platform_script.sql" -Raw) -replace $h, $($values.Item($h)) | Set-Content -Path "C:\\Users\\Administrator\\Documents\\platform_script.sql"
+                (Get-Content -path "C:\\Users\\Administrator\\Documents\\etl_user_script.sql" -Raw) -replace $h, $($values.Item($h)) | Set-Content -Path "C:\\Users\\Administrator\\Documents\\etl_user_script.sql"
+                (Get-Content -path "C:\\Users\\Administrator\\Documents\\etl_script.sql" -Raw) -replace $h, $($values.Item($h)) | Set-Content -Path "C:\\Users\\Administrator\\Documents\\etl_script.sql"
+                (Get-Content -path "C:\\Users\\Administrator\\Documents\\server.hsconf" -Raw) -replace $h, $($values.Item($h)) | Set-Content -Path "C:\\Users\\Administrator\\Documents\\server.hsconf"
+              }
+              [xml]$xmlDoc = Get-Content "C:\\Users\\Administrator\\Documents\\server.hsconf"
+              $xmlDoc.EnvironmentConfiguration.NetworkConfiguration.OutgoingIPAddress = "$privateIp"
+              $xmlDoc.EnvironmentConfiguration.CacheInvalidationConfiguration.ServiceHost = "$privateIp"
+              $xmlDoc.EnvironmentConfiguration.ServiceConfiguration.CompilerServerHostname = "$privateIp"
+              $xmlDoc.Save("C:\\Users\\Administrator\\Documents\\server.hsconf")
+              Write-Host "Starting Database Script"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${DatabaseUsername} -P ${DatabasePassword} -i "C:\\Users\\Administrator\\Documents\\platform_script.sql"
+              Write-Host "Finished Database Script"
+              cp "C:\\Users\\Administrator\\Documents\\server.hsconf" "C:\\Program Files\\OutSystems\\Platform Server"
+              Write-Host "Server configuration copied. Running configuration tool"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_parameter where name = 'ClientApplicationToken'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_parameter where name = 'privateKeyValidation'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_Parameter where name = 'OutSystems.HubEdition.MobileLogin_AuthenticationHMACKey'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_Parameter where name = 'OutSystems.HubEdition.MobileLogin_AuthenticationEncryptKey'"
+              Restart-Service AmazonSSMAgent
+              & 'C:\\Program Files\\OutSystems\\Platform Server\\ConfigurationTool.com' /SetupInstall ${OutSystemsAdminDBUsername} ${OutSystemsAdminDBPassword} ${OutSystemsAdminDBUsername} ${OutSystemsAdminDBPassword} /SetPlatformServerAdminPassword ${OutSystemsPlatformPassword} /RebuildSession ${OutSystemsSessionDBAdminUsername} ${OutSystemsSessionDBAdminPassword} /CreateUpgradeCacheInvalidationService /SCInstall
+              Write-Host "Starting looking for DNS name"
+              Do
+              {
+                $resolveDomain = (Resolve-DnsName -Name dev.portal.xyz.com -Type A | Where-Object { $_.Strings -ne '' } | Measure-Object).Count
+                If ($resolveDomain -eq 0) {
+                  Write-Host "Didn't find any records. Sleeping for 5 minutes and trying again"
+                  Start-Sleep -Seconds 300
+                }
+                Else {
+                  Write-Host "Found a record for ${OutSystemsHostname}, Continuing on..."
+                  break
+                }
+              } While ($true)
+              Write-Host "Starting publishing the site"
+              & 'C:\\Program Files\\Common Files\\OutSystems\\11.0\\OSPTool.com' /Publish "C:\\Program Files\\OutSystems\\Platform Server\\System_Components.osp" ${OutSystemsHostname} Admin ${OutSystemsPlatformPassword}
+              cp "C:\\Program Files\\OutSystems\\Platform Server\\private.key" "C:\\Program Files\\OutSystems\\Platform Server\\private.key.back"
+              Write-Host "Starting Post Database Script"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -i "C:\\Users\\Administrator\\Documents\\etl_user_script.sql"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsETLAdminDBUsername} -P ${OutSystemsETLAdminDBPassword} -i "C:\\Users\\Administrator\\Documents\\etl_script.sql"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsETLAdminDBUsername} -P ${OutSystemsETLAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "drop view if exists dbo.vw_customerprofile"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsETLAdminDBUsername} -P ${OutSystemsETLAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "drop view if exists dbo.vw_nominatedaccount"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsETLAdminDBUsername} -P ${OutSystemsETLAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "drop view if exists dbo.vw_application"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsETLAdminDBUsername} -P ${OutSystemsETLAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "drop view if exists dbo.vw_account"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsETLAdminDBUsername} -P ${OutSystemsETLAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "create view dbo.vw_customerprofile as select CustomerProfile.ID,CustomerProfile.CUSTOMERUNIQUEID,CustomerProfile.USERID,CustomerProfile.FIRSTNAME,CustomerProfile.MIDDLENAME,CustomerProfile.LASTNAME,CustomerProfile.DATEOFBIRTH,CustomerProfile.NOMINATEDACCOUNTID,CustomerProfile.PLACEOFBIRTH,CustomerProfile.NATIONALITYID,CustomerProfile.CITIZENSHIP1,CustomerProfile.CITIZENSHIP2,CustomerProfile.CITIZENSHIP3,CustomerProfile.CITIZENSHIP4,CustomerProfile.CITIZENSHIP5,CustomerProfile.TAXRESIDENCY1,CustomerProfile.TAXRESIDENCY2,CustomerProfile.TAXRESIDENCY3,CustomerProfile.TAXIDENTIFICATIONNUMBER1,CustomerProfile.TAXIDENTIFICATIONNUMBER2,CustomerProfile.TAXIDENTIFICATIONNUMBER3,CustomerProfile.EMAILADDRESS,CustomerProfile.LANDLINENUMBER,CustomerProfile.PHONENUMBER,CustomerProfile.CUSTOMERREFERENCENO,CustomerProfile.ISUPLOADALLOWED,CustomerProfile.ISVERIFIEDCUSTOMER,CustomerProfile.ISVERIFIEDEMAIL,CustomerProfile.ISVERIFIEDPHONENUMBER,CustomerProfile.ISVERIFIEDLANDLINENUMBER,CustomerProfile.ISAVAILABLEINCOGNITO,CustomerProfile.CREATEDON,CustomerProfile.CREATEDBY,CustomerProfile.UPDATEDON,CustomerProfile.UPDATEDBY,CustomerProfile.TITLEMASTERID,CustomerProfile.ISPROFILELOCKED,CustomerProfile.LASTLOGINON,TITLEMASTER.label TITLE from dbo.CustomerProfile left join dbo.TITLEMASTER on (TITLEMASTER.id= CustomerProfile.TITLEMASTERID)"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsETLAdminDBUsername} -P ${OutSystemsETLAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "create view dbo.vw_nominatedaccount as select NominatedAccount.*, AccountStatus.name status from dbo.NominatedAccount left join dbo.AccountStatus ON (AccountStatus.id=NominatedAccount.ACCOUNTSTATUSID)"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsETLAdminDBUsername} -P ${OutSystemsETLAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "create view dbo.vw_application as select Application.*,Applicationstatus.name status from dbo.Application left join dbo.Applicationstatus on (Applicationstatus.id=Application.Applicationstatusid)"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsETLAdminDBUsername} -P ${OutSystemsETLAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "create view dbo.vw_account as select Account.*, AccountStatus.name status from dbo.Account left join dbo.AccountStatus ON (AccountStatus.id=Account.ACCOUNTSTATUSID)"
+              Write-Host "Finished Post Database Script"
+              echo installed  > C:\\Users\\Administrator\\Documents\\installed.txt
+            }
+            </powershell>
+            <persist>true</persist>
+
+  NodeGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      DesiredCapacity: !Ref NodeAutoScalingGroupDesiredCapacity
+      LaunchTemplate:
+        LaunchTemplateId: !Ref NodeLaunchTemplate
+        Version: !GetAtt NodeLaunchTemplate.LatestVersionNumber
+      TargetGroupARNs:
+        - !Ref TargetGroup
+        - !Ref PrivateTargetGroup
+      MaxSize: !Ref NodeAutoScalingGroupMaxSize
+      MinSize: !Ref NodeAutoScalingGroupMinSize
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 120
+      Tags:
+        - Key: Name
+          PropagateAtLaunch: "true"
+          Value: !Sub ${EnvironmentPrefix}-${NodeGroupName}-Server-Node
+        - Key: 'Patch Group'
+          PropagateAtLaunch: "true"
+          Value: Windows
+      VPCZoneIdentifier: !Ref PrivateSubnets
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: "1"
+        MinInstancesInService: !Ref NodeAutoScalingGroupDesiredCapacity
+        PauseTime: PT5M
+
+  CPUPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref NodeGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: !Ref PolicyTargetValue
+
+Outputs:
+  NodeGroup:
+    Description: OS Server Node Group
+    Value: !Ref NodeGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-NodeGroup"

@@ -1,0 +1,138 @@
+properties = null
+isDeployProp = false
+
+def loadProperties() {
+    properties = readProperties file: "aws_main_infra/cf_templates/stacker/conf/shared.env"
+    security_properties = readProperties file: "aws_main_infra/cf_templates/stacker/conf/enhanced_security_shared.env"
+}
+
+node {
+
+  stage('SCM Checkout'){
+    checkout scm
+  }
+
+  stage("Variable Declaration") {
+    script {
+      catchError {
+        dir('./') {
+          loadProperties()
+          env.env_prefix_value = "${properties.environment_prefix}"
+          shared_account_id = "${properties.shared_account_id}"
+          shared_profile = "${properties.shared_profile}"
+          aws_region = "${properties.region}"
+          os_db_username = "${OS_DB_Username}"
+          os_db_password = "${OS_DB_Password}"
+          os_system_admin_db_username = "${OS_Admin_DB_Username}"
+          os_system_admin_db_password = "${OS_Admin_DB_Password}"
+          os_runtime_admin_db_username = "${OS_Runtime_Admin_DB_Username}"
+          os_runtime_admin_db_password = "${OS_Runtime_Admin_DB_Password}"
+          os_runtime_log_admin_db_username = "${OS_Runtime_Log_Admin_DB_Username}"
+          os_runtime_log_admin_db_password = "${OS_Runtime_Log_Admin_DB_Password}"
+          os_session_admin_db_username = "${OS_Session_DB_Admin_Username}"
+          os_session_admin_db_password = "${OS_Session_DB_Admin_Password}"
+          os_platform_admin_db_password = "${OS_Platform_Admin_Password}"
+          os_service_password = "${OS_Service_Password}"
+          stacker_bucket = "${properties.stacker_bucket}"
+          security_stacker_bucket = "${security_properties.stacker_bucket}"
+          enhanced_security_enabled = "${security_properties.enhanced_security_enabled}"
+        }
+      }
+      echo currentBuild.result
+    }
+  }
+
+  stage("AWS Config") {
+    catchError {
+      dir("aws_main_infra/scripts/infra") {
+        sh "chmod +x ./infra_aws_config.sh"
+        sh "./infra_aws_config.sh ${shared_account_id} ${shared_profile} ${aws_region}"
+      }
+    }
+    echo currentBuild.result
+  }
+
+  stage("Upload Lambda Code") {
+    if ( "${OPTION}" == 'Create') {
+      script {
+        catchError {
+          dir("aws_main_infra/scripts/infra") {
+            sh "chmod +x ./compress_and_upload_to_s3.sh"
+            sh "./compress_and_upload_to_s3.sh \$(pwd)/../../lambda_code ${env_prefix_value} ${shared_profile} ${aws_region}"
+          }
+        }
+        echo currentBuild.result
+      }
+    }
+  }
+
+  stage("Create ElasticSearch Infrastructure") {
+    if ( "${OPTION}" == 'Create') {
+      script {
+        catchError {
+          dir("aws_main_infra/scripts/infra") {
+            sh "chmod +x ./elasticsearch.sh"
+            sh "./elasticsearch.sh ${shared_account_id} ${shared_profile} ${aws_region}"
+          }
+        }
+        echo currentBuild.result
+      }
+    }
+  }
+
+  stage("Create Shared Infrastructure") {
+    if ( "${OPTION}" == 'Create') {
+      script {
+        catchError {
+          dir("aws_main_infra/scripts/infra") {
+            sh "chmod +x ./shared-stacker.sh"
+            sh "./shared-stacker.sh ${aws_region} ${stacker_bucket} ${shared_profile} ${os_db_username} ${os_db_password} ${os_system_admin_db_username} ${os_system_admin_db_password} ${os_runtime_admin_db_username} ${os_runtime_admin_db_password} ${os_runtime_log_admin_db_username} ${os_runtime_log_admin_db_password} ${os_session_admin_db_username} ${os_session_admin_db_password} ${os_platform_admin_db_password} ${os_service_password}"
+          }
+        }
+        echo currentBuild.result
+      }
+    }
+  }
+
+  stage("Create Enhanced Security Infrastructure") {
+    if ( "${OPTION}" == 'Create') {
+      script {
+        catchError {
+          dir("aws_main_infra/scripts/infra") {
+            sh "chmod +x ./enhanced_security.sh"
+            sh "./enhanced_security.sh ${shared_profile} ${enhanced_security_enabled} ${security_stacker_bucket}"
+          }
+        }
+        echo currentBuild.result
+      }
+    }
+  }
+
+  stage("SecurityHub Configuration") {
+    if ( "${OPTION}" == 'Create' && "${enhanced_security_enabled}" == 'true') {
+      dir("aws_main_infra/scripts/infra") {
+        catchError {
+          sh "aws --profile ${shared_profile} securityhub enable-security-hub --enable-default-standards --tags '{\"Environment\": \"Shared\"}' || echo 'already enabled'"
+        }
+      }
+    } else if ( "${OPTION}" == 'Delete') {
+      catchError {
+       sh "aws --profile ${shared_profile} securityhub disable-security-hub || echo 'already enabled'"
+      }
+    }
+  }
+
+  stage("Finalize") {
+    if ( "${OPTION}" == 'Delete') {
+      catchError {
+        dir("aws_main_infra") {
+          sh "stacker destroy conf/elasticsearch.env elasticsearch-stacker.yaml --force --region=${aws_region}"
+          sh "stacker destroy conf/os-lifetime.env os-lifetime-stacker.yaml --force --region=${aws_region}"
+          sh "stacker destroy conf/enhanced_security_shared.env shared-enhanced-security-stacker.yaml --force --region=${aws_region}"
+        }
+      }
+    }
+  }
+
+  step([$class: 'Mailer', notifyEveryUnstableBuild: true, recipients: '$DEFAULT_RECIPIENTS', sendToIndividuals: true])
+}

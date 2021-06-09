@@ -1,0 +1,482 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: DataLake Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  RedshiftKey:
+    Type: String
+    Description: ID of redshift key.
+  CustomResourceLambdaExecutionRoleArn:
+    Type: String
+    Description: Custom Resource Lambda Execution Role Arn.
+  RedshiftSpectrumRoleArn:
+    Type: String
+    Description: Redshift Spectrum Role Arn.
+  RedshiftBackupRetentionPeriod:
+    Type: Number
+    Default: 7
+    Description: Database backup retention period in days.
+  RedshiftClusterIdentifier:
+    Type: String
+    Description: Redshift Cluster Name
+    Default: DataLakeRedshiftCluster
+  DRRegion:
+    Description: DR Region ID.
+    Type: String
+  LambdaS3BucketName:
+    Type: String
+    Description: Lambda Code zip file S3 bucket name
+  RedshiftConfigCustomResourceLambdaFileName:
+    Type: String
+    Description: Redshift Config Lambda Code zip filename in S3
+  DWHLoadLambdaFunctionArn:
+    Type: String
+    Description: DWH Load Lambda Arn
+  AlmisLambdaFunctionArn:
+    Type: String
+    Description: Almis Lambda Arn
+  RefreshDWHCron:
+    Description: Cron exp for refresh dwh.
+    Type: String
+  RedshiftClusterIdentifier:
+    Type: String
+    Description: Redshift Cluster Name
+    Default: DataLakeRedshiftCluster
+  RedshiftDBName:
+    Type: String
+    Description: Redshift DB Name
+  RedshiftUsername:
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 1 to 16 alphanumeric characters.
+    Description: The Redshift admin account user name, between 1 to 16 alphanumeric characters.
+    MaxLength: '16'
+    MinLength: '1'
+    Type: String
+  RedshiftSchema:
+    Description: The Redshift schema name.
+    Default: xyz_dwh
+    Type: String
+  RedshiftPassword:
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+    Description: The Redshift admin account password, between 8 to 41 alphanumeric characters.
+    MaxLength: '41'
+    MinLength: '8'
+    NoEcho: 'true'
+    Type: String
+  RedshiftInstanceType:
+    Type: String
+    Default: dc2.large
+    Description: Enter Redshift Instance types.
+  RedshiftClusterType:
+    Type: String
+    Default: single-node
+    AllowedValues:
+      - single-node
+      - multi-node
+    Description: Enter Redshift Cluster types.
+  RedshiftBackupRetentionPeriod:
+    Type: Number
+    Default: 7
+    Description: Database backup retention period in days.
+  RedshiftNoOfNodes:
+    Type: Number
+    Default: 1
+    Description: No of Redshift nodes.
+  PublicSubnets:
+    Type: CommaDelimitedList
+    Description: List of public ips.
+  ADBSecurityGroup:
+    Type: String
+    Description: DB Sec Group id
+  LambdaKeyArn:
+    Type: String
+    Description: Arn of Lambda Key
+  SecretKey:
+    Type: String
+    Description: ID of secret key
+  Email:
+    Type: String
+    Description: Statemachine notification email
+
+Conditions:
+  IsRedshiftNotSingleNode: !Not [!Equals [!Ref RedshiftClusterType, "single-node"]]
+  IsDevEnv: !Equals [!Ref EnvironmentPrefix, 'dev']
+  IsProdEnv: !Equals [!Ref EnvironmentPrefix, 'prod']
+
+Resources:
+
+  UpdateRedshiftLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentPrefix}-redshift-update-lambda-func'
+      Runtime: python3.7
+      Role: !Ref CustomResourceLambdaExecutionRoleArn
+      Handler: index.handler
+      MemorySize: 1024
+      Timeout: 120
+      KmsKeyArn: !Ref LambdaKeyArn
+      Environment:
+        Variables:
+          env_prefix: !Ref EnvironmentPrefix
+          cluster_id: !Ref RedshiftClusterIdentifier
+          sapshot_retention_period: !Ref RedshiftBackupRetentionPeriod
+          dr_region: !Ref DRRegion
+          snapshot_copy_grant_name: !Sub '${EnvironmentPrefix}-redshift-snapshot-grant-obj'
+          kms_key_id: !Ref RedshiftKey
+      Code:
+        S3Bucket: !Ref LambdaS3BucketName
+        S3Key: !Ref RedshiftConfigCustomResourceLambdaFileName
+      Description: Lambda to back custom resource to update redshift.
+
+  UpdateRedshiftResource:
+    Condition: IsProdEnv
+    Type: Custom::UpdateRedshiftLambda
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - UpdateRedshiftLambdaFunction
+        - Arn
+      Region:
+        Ref: AWS::Region
+
+  DLStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub "${EnvironmentPrefix}-RefreshDWH-StateMachine"
+      DefinitionString: !Sub |-
+        {"Comment":"Parallel Truncate","StartAt":"Clean","States":{"Clean":{"Type":"Parallel","Next":"RefreshDWH","Branches":[{"StartAt":"stg_source_tracking","States":{"stg_source_tracking":{"Type":"Task","Parameters":{"sql":"truncate table xyz_stg.stg_source_tracking;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"stg_unit_test_result","States":{"stg_unit_test_result":{"Type":"Task","Parameters":{"sql":"truncate table xyz_stg.stg_unit_test_result;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"factgljournal","States":{"factgljournal":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.factgljournal;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"customerdetailshistory","States":{"customerdetailshistory":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.customerdetailshistory;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"acctinterestschedule","States":{"acctinterestschedule":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.acctinterestschedule;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"customeraddresshistory","States":{"customeraddresshistory":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.customeraddresshistory;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"addresslines_fscs","States":{"addresslines_fscs":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.addresslines_fscs;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"countrymaster","States":{"countrymaster":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.countrymaster;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"custaddrdetails","States":{"custaddrdetails":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.custaddrdetails;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"custcitizenship","States":{"custcitizenship":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.custcitizenship;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"customer_x_account","States":{"customer_x_account":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.customer_x_account;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"custtaxresidency","States":{"custtaxresidency":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.custtaxresidency;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"dimaccount","States":{"dimaccount":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.dimaccount;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"dimcustomer","States":{"dimcustomer":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.dimcustomer;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"dimgeography","States":{"dimgeography":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.dimgeography;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"dimglaccount","States":{"dimglaccount":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.dimglaccount;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"DimNominatedAccount","States":{"DimNominatedAccount":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.DimNominatedAccount;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"DimProduct","States":{"DimProduct":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.DimProduct;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"DimSavingAccount","States":{"DimSavingAccount":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.DimSavingAccount;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"factaccountinterest","States":{"factaccountinterest":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.factaccountinterest;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"factacctbalssdaily","States":{"factacctbalssdaily":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.factacctbalssdaily;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"factsavingstrans","States":{"factsavingstrans":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.factsavingstrans;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"nationalitymaster","States":{"nationalitymaster":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.nationalitymaster;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}},{"StartAt":"factnotificationevent","States":{"factnotificationevent":{"Type":"Task","Parameters":{"sql":"truncate table xyz_dwh.factnotificationevent;"},"Resource":"${DWHLoadLambdaFunctionArn}","End":true}}}]},"RefreshDWH":{"Type":"Task","Parameters":{"sql":"begin; call xyz_stg.prc_load_dwh(); commit;"},"Resource":"${DWHLoadLambdaFunctionArn}","Next":"RenameAlmis"},"RenameAlmis":{"Type":"Task","Resource":"${AlmisLambdaFunctionArn}","End":true}}}
+      RoleArn: !GetAtt StepFunctionLambdaRole.Arn
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${EnvironmentPrefix}-RefreshDWH-StateMachine"
+
+  CMKForSNS:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: !Sub "This is ${EnvironmentPrefix} environment customer managed CMK for statemachine SNS."
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - sns.amazonaws.com
+                - events.amazonaws.com
+                - states.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:*"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+  SnsTopicForCWAlerts:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref Email
+      TopicName: !Sub "${EnvironmentPrefix}-dwh-statemachine-notification-topic"
+      KmsMasterKeyId:  !Ref CMKForSNS
+
+  SnsTopicPolicyForCWAlerts:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        -
+          !Ref SnsTopicForCWAlerts
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Sid: DefaultPolicy
+            Principal:
+              AWS: "*"
+            Action:
+            - sns:GetTopicAttributes
+            - sns:SetTopicAttributes
+            - sns:AddPermission
+            - sns:RemovePermission
+            - sns:DeleteTopic
+            - sns:Subscribe
+            - sns:ListSubscriptionsByTopic
+            - sns:Publish
+            - sns:Receive
+            Resource: !Ref SnsTopicForCWAlerts
+            Condition:
+              StringEquals:
+                "AWS:SourceOwner": !Ref AWS::AccountId
+          - Effect: Allow
+            Sid: AllowSNSPublishFromEvents
+            Action:
+            - sns:Publish
+            Resource: !Ref SnsTopicForCWAlerts
+            Principal:
+              Service: "events.amazonaws.com"
+
+  EventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: !Sub "This is to call step wrapper function in ${EnvironmentPrefix}"
+      EventPattern:
+        source:
+          - "aws.states"
+        detail-type:
+          - "Step Functions Execution Status Change"
+        detail:
+          status:
+            - FAILED
+            - SUCCEEDED
+          stateMachineArn:
+            - !Ref DLStateMachine
+      State: "ENABLED"
+      Targets:
+        -
+          Arn: !Ref SnsTopicForCWAlerts
+          Id: !Sub "${EnvironmentPrefix}-NotifyStateMachineStatus"
+
+  StepFunctionLambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub '${EnvironmentPrefix}-step-func-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+        - "arn:aws:iam::aws:policy/CloudWatchActionsEC2Access"
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaRole"
+        - "arn:aws:iam::aws:policy/AWSOpsWorksCloudWatchLogs"
+      Path: /
+
+  StepFunctionPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: StepFunctionLambdaRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - logs:*
+          Resource: "*"
+
+  EventInvokeStepFuncRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+
+  EventInvokeStepFuncRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: EventInvokeStepFuncRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - states:StartExecution
+          Resource: !Ref DLStateMachine
+
+  ScheduledRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: !Sub "This is to call step wrapper function in ${EnvironmentPrefix}"
+      ScheduleExpression: !Ref RefreshDWHCron
+      State: "ENABLED"
+      Targets:
+        -
+          RoleArn: !GetAtt EventInvokeStepFuncRole.Arn
+          Arn: !Ref DLStateMachine
+          Id: !Sub "${EnvironmentPrefix}-RefreshDWHStateMachine"
+
+  RedshiftClusterPublicSubnetGroup:
+    Type: 'AWS::Redshift::ClusterSubnetGroup'
+    Properties:
+      Description: ClusterSubnetGroup for Datalake
+      SubnetIds: !Ref PublicSubnets
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-DatalakeSubnetGroup'
+
+  CustomRedshiftKey:
+    Condition: IsProdEnv
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: !Sub "This is ${EnvironmentPrefix} environment customer managed CMK for Redshift Data at rest encrytion."
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: redshift.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Ref CustomResourceLambdaExecutionRoleArn
+                - !Ref RedshiftSpectrumRoleArn
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:*"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+  DBPasswordSecret:
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Description: "This is a Secrets Manager secret for OS RDS DB instance"
+      Name: !Sub '${EnvironmentPrefix}-DataLake-Redshift-Password'
+      SecretString: !Sub '{"username":"${RedshiftUsername}","password":"${RedshiftPassword}","schema":"${RedshiftSchema}"}'
+      KmsKeyId: !Ref SecretKey
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Datalake-Redshift-DB-Password'
+
+  LoggingBucket:
+    Condition: IsProdEnv
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${EnvironmentPrefix}-redshift-logging-bucket"
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  LoggingBucketPolicy:
+    Condition: IsProdEnv
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref LoggingBucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:*'
+            Effect: Deny
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref LoggingBucket
+                - /*
+            Principal: '*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+
+  DLRedshiftCluster:
+    Type: "AWS::Redshift::Cluster"
+    Properties:
+      ClusterIdentifier: !Ref RedshiftClusterIdentifier
+      DBName: !Ref RedshiftDBName
+      MasterUsername: !Ref RedshiftUsername
+      MasterUserPassword: !Ref RedshiftPassword
+      NodeType: !Ref RedshiftInstanceType
+      ClusterType: !Ref RedshiftClusterType
+      AutomatedSnapshotRetentionPeriod: !Ref RedshiftBackupRetentionPeriod
+      ClusterSubnetGroupName: !Ref RedshiftClusterPublicSubnetGroup
+      Encrypted: true
+      LoggingProperties: !If
+        - IsProdEnv
+        - BucketName: !Ref LoggingBucket
+        - !Ref AWS::NoValue
+      KmsKeyId: !If
+        - IsProdEnv
+        - !Ref CustomRedshiftKey
+        - !Ref AWS::NoValue
+      NumberOfNodes: !If
+        - IsRedshiftNotSingleNode
+        - !Ref RedshiftNoOfNodes
+        - !Ref AWS::NoValue
+      PreferredMaintenanceWindow: mon:03:00-mon:04:00
+      PubliclyAccessible: true
+      VpcSecurityGroupIds:
+        - !Ref ADBSecurityGroup
+      IamRoles:
+        - !Ref RedshiftSpectrumRoleArn
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Datalake-${RedshiftClusterIdentifier}'
+
+  SecretRedshiftAttachment:
+    Type: "AWS::SecretsManager::SecretTargetAttachment"
+    Properties:
+      SecretId: !Ref DBPasswordSecret
+      TargetId: !Ref DLRedshiftCluster
+      TargetType: AWS::Redshift::Cluster
+
+Outputs:
+  DBPasswordSecretOutput:
+    Description: DB Password Secret Arn
+    Value: !Ref DBPasswordSecret
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-DBPasswordSecret"

@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: OutSystems Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  OSLoadBalancer:
+    Type: String
+    Description: Prefix for Env Name
+  OWSAPWAFRuleGroupARN:
+    Type: String
+    Description: Arn for owsap rule group.
+
+Conditions:
+  IsProdEnv: !Equals [!Ref EnvironmentPrefix, 'prod']
+  IsNotProdEnv: !Not [!Equals [!Ref EnvironmentPrefix, 'prod']]
+
+Resources:
+  DummyRole:
+    Condition: IsNotProdEnv
+    Type: "AWS::IAM::Role"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-os-lifetime-waf-dummy-role'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+
+  OSWebACL:
+    Condition: IsProdEnv
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-OS-WebACL"
+      Scope: REGIONAL
+      Description: This is an example WebACL
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub "${EnvironmentPrefix}-OS-WebACLMetric"
+      Rules:
+        - Name: RuleWithOWSAPRules
+          Priority: 0
+          OverrideAction:
+            - None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RuleWithOWSAPRulesMetric
+          Statement:
+            RuleGroupReferenceStatement:
+              Arn: !Ref OWSAPWAFRuleGroupARN
+              ExcludedRules: []
+        - Name: RuleWithAWSManagedKnownBadInputsRules
+          Priority: 3
+          OverrideAction:
+            Count: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RuleWithAWSManagedKnownBadInputsRulesMetric
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+              ExcludedRules: []
+        - Name: RuleWithAWSManagedSQLInjectInputsRules
+          Priority: 4
+          OverrideAction:
+            - None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RuleWithAWSManagedSQLInjectInputsRulesMetric
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesSQLiRuleSet
+              ExcludedRules: []
+        - Name: RuleWithAWSManagedWindowsRules
+          Priority: 5
+          OverrideAction:
+            - None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RuleWithAWSManagedWindowsRulesMetric
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesWindowsRuleSet
+              ExcludedRules: []
+        - Name: RuleWithAWSManagedIPReputationRules
+          Priority: 6
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RuleWithAWSManagedIPReputationRulesMetric
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesAmazonIpReputationList
+              ExcludedRules: []
+        - Name: RuleWithAWSManagedAdminProtectionRules
+          Priority: 7
+          OverrideAction:
+            Count: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RuleWithAWSManagedAdminProtectionRulesMetric
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesAdminProtectionRuleSet
+              ExcludedRules: []
+
+  OSWebACLAssociation:
+    Condition: IsProdEnv
+    Type: 'AWS::WAFv2::WebACLAssociation'
+    Properties:
+      WebACLArn: !GetAtt OSWebACL.Arn
+      ResourceArn: !Ref OSLoadBalancer

@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Configure ES Old Log Deletion
+Parameters:
+  S3BucketName:
+    Type: String
+    Default: 'lambda-code-for-xyz-application-logs'
+    Description: Lambda Code zip file S3 bucket name
+  S3FileName:
+    Type: String
+    Default: 'delete_old_logs.zip'
+    Description: Lambda Code zip filename in S3
+  CronExpression:
+    Type: String
+    Default: '0 0 * * ? *'
+    Description: Cron Expression for the rule
+  EnvironmentName:
+    Type: String
+    Default: 'development'
+    Description: Environment name
+  ESClusterDomainEP:
+    Type: String
+    Description: ES Cluster Domain Endpoint
+  LabmdaRoleArn:
+    Type: String
+    Description: Lambda Role Arn
+  MemorySizeMB:
+    Type: Number
+    Default: 1024
+    Description: Lambda max MemorySize in MB
+  LambdaTimeoutSeconds:
+    Type: Number
+    Default: 300
+    Description: Lambda timeout value
+  LogRetentionTimePeriod:
+    Type: String
+    Default: '3'
+    Description: ES Log retention time period
+  LambdaKeyArn:
+    Type: String
+    Description: Arn of Lambda Key
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Configurations
+        Parameters:
+          - S3BucketName
+          - S3FileName
+          - CronExpression
+          - EnvironmentName
+          - ESClusterDomainEP
+          - LabmdaRoleArn
+          - MemorySizeMB
+          - LambdaTimeoutSeconds
+          - LogRetentionTimePeriod
+Resources:
+  DeleteOldLogs:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Runtime: nodejs12.x
+      Role: !Ref LabmdaRoleArn
+      Handler: index.handler
+      KmsKeyArn: !Ref LambdaKeyArn
+      Environment:
+        Variables:
+          elasticsearch_cluster_dns: !Ref ESClusterDomainEP
+          environment_name: !Ref EnvironmentName
+          retention_period: !Ref LogRetentionTimePeriod
+      MemorySize: !Ref MemorySizeMB
+      Timeout: !Ref LambdaTimeoutSeconds
+      Code:
+        S3Bucket: !Sub ${S3BucketName}
+        S3Key: !Sub ${S3FileName}
+      Description: Invoke a function during stack creation.
+
+  CloudWatchSubscriptionFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - "DeleteOldLogs"
+          - "Arn"
+      Action: 'lambda:InvokeFunction'
+      Principal: 'events.amazonaws.com'
+      SourceArn:
+        Fn::GetAtt:
+          - "CWRule"
+          - "Arn"
+
+  CWRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: 'Delete old indices'
+      ScheduleExpression: !Sub 'cron(${CronExpression})'
+      State: 'ENABLED'
+      Targets:
+        - Id: !Sub 'DelOldLogs-${EnvironmentName}'
+          Arn:
+            Fn::GetAtt:
+              - "DeleteOldLogs"
+              - "Arn"

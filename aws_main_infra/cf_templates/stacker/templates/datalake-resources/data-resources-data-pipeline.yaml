@@ -1,0 +1,1194 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: DataLake Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  LinuxNodeImageID:
+    Type: String
+    Description: Image ID / AMI ID for Linux Host
+  S3BucketName:
+    Type: String
+    Description: S3 Bucket Name
+  DataPipelineSubnetId:
+    Description: Data Pipeline Subnet Id.
+    Type: String
+  NodeInstanceProfile:
+    Description: Node instance profile arn.
+    Type: String
+  GlueServiceRoleArn:
+    Description: Glue role arn.
+    Type: String
+  NodeSecurityGroup:
+    Description: Node security group id.
+    Type: String
+  DataExtractPipelineStartTime:
+    Description: Data Extract Pipeline Start time.
+    Type: String
+  DataExtractPipelineLogFolder:
+    Description: Data Extract Pipeline Log Folder.
+    Type: String
+  RedshiftDBName:
+    Type: String
+    Description: Redshift DB Name
+  Email:
+    Type: String
+    Description: Datapipeline notification email
+
+Conditions:
+  IsNotDevEnv: !Not [!Equals [!Ref EnvironmentPrefix, 'dev']]
+
+Resources:
+  CMKForSNS:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: !Sub "This is ${EnvironmentPrefix} environment customer managed CMK for datapipeline SNS."
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - sns.amazonaws.com
+                - datapipeline.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+                - !GetAtt DataPipelineRole.Arn
+                - !GetAtt DataPipelineResourceRole.Arn
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:*"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+  SnsTopicForCWAlerts:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref Email
+      TopicName: !Sub "${EnvironmentPrefix}-datapipeline-notification-topic"
+      KmsMasterKeyId:  !Ref CMKForSNS
+
+  SnsTopicPolicyForCWAlerts:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        -
+          !Ref SnsTopicForCWAlerts
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Sid: DefaultPolicy
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+            - sns:GetTopicAttributes
+            - sns:SetTopicAttributes
+            - sns:AddPermission
+            - sns:RemovePermission
+            - sns:DeleteTopic
+            - sns:Subscribe
+            - sns:ListSubscriptionsByTopic
+            - sns:Publish
+            - sns:Receive
+            Resource: !Ref SnsTopicForCWAlerts
+          - Effect: Allow
+            Sid: AllowSNSPublishFromDataPipeline
+            Action:
+            - sns:Publish
+            Resource: !Ref SnsTopicForCWAlerts
+            Principal:
+              Service: "datapipeline.amazonaws.com"
+          - Effect: Allow
+            Sid: AllowSNSPublishFromDataPipelineRoles
+            Action:
+            - sns:Publish
+            Resource: !Ref SnsTopicForCWAlerts
+            Principal:
+              AWS:
+                - !GetAtt DataPipelineRole.Arn
+                - !GetAtt DataPipelineResourceRole.Arn
+
+  DataPipelineRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - elasticmapreduce.amazonaws.com
+                - ec2.amazonaws.com
+                - datapipeline.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSDataPipelineRole'
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+      Path: /
+
+  DataPipelineResourceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - elasticmapreduce.amazonaws.com
+                - ec2.amazonaws.com
+                - datapipeline.amazonaws.com
+                - cloudwatch.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSDataPipelineRole'
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/CloudWatchFullAccess'
+        - 'arn:aws:iam::aws:policy/AWSDataPipeline_FullAccess'
+        - 'arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforDataPipelineRole'
+        - 'arn:aws:iam::aws:policy/AmazonSSMFullAccess'
+      Path: /
+
+  DataExtractPipeline:
+    Type: AWS::DataPipeline::Pipeline
+    Properties:
+      Name: !Sub '${EnvironmentPrefix}-DataExtractPipeline'
+      Description: "Pipeline to extract data"
+      Activate: true
+      PipelineObjects:
+        - Id: PipelineSchedule
+          Name: "Every 1 day"
+          Fields:
+            -
+              Key: "period"
+              StringValue: "1 Day"
+            -
+              Key: "startDateTime"
+              StringValue: !Ref DataExtractPipelineStartTime
+            -
+              Key: "type"
+              StringValue: "Schedule"
+        - Id: SnsAlarmActionOnfail
+          Name: "Sns Alarm Action On fail"
+          Fields:
+            -
+              Key: "subject"
+              StringValue: "Failed PipelineId: #{node.@pipelineId} Error: #{node.errorMessage}"
+            -
+              Key: "role"
+              StringValue: !Ref DataPipelineRole
+            -
+              Key: "message"
+              StringValue: "Error: #{node.errorStackTrace}"
+            -
+              Key: "topicArn"
+              StringValue: !Ref SnsTopicForCWAlerts
+            -
+              Key: "type"
+              StringValue: "SnsAlarm"
+        - Id: SnsAlarmActionOnSuccess
+          Name: "Sns Alarm Action On Success"
+          Fields:
+            -
+              Key: "subject"
+              StringValue: "Success PipelineId: #{node.@pipelineId}"
+            -
+              Key: "role"
+              StringValue: !Ref DataPipelineRole
+            -
+              Key: "message"
+              StringValue: "Pipeline Step #{node} executed successfully"
+            -
+              Key: "topicArn"
+              StringValue: !Ref SnsTopicForCWAlerts
+            -
+              Key: "type"
+              StringValue: "SnsAlarm"
+        - Id: ec2_resource
+          Name: "ec2-resource"
+          Fields:
+            -
+              Key: "resourceRole"
+              StringValue: !Ref NodeInstanceProfile
+            -
+              Key: "role"
+              StringValue: !Ref DataPipelineRole
+            -
+              Key: "subnetId"
+              StringValue: !Ref DataPipelineSubnetId
+            -
+              Key: "imageId"
+              StringValue: !Ref LinuxNodeImageID
+            -
+              Key: "securityGroupIds"
+              StringValue: !Ref NodeSecurityGroup
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "type"
+              StringValue: Ec2Resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: Default
+          Name: Default
+          Fields:
+            -
+              Key: "resourceRole"
+              StringValue: !Ref DataPipelineResourceRole
+            -
+              Key: "role"
+              StringValue: !Ref DataPipelineRole
+            -
+              Key: "pipelineLogUri"
+              StringValue: !Join
+                - ''
+                - - s3://
+                  - !Ref S3BucketName
+                  - /
+                  - !Ref DataExtractPipelineLogFolder
+                  - /
+            -
+              Key: "scheduleType"
+              StringValue: cron
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "failureAndRerunMode"
+              StringValue: CASCADE
+            -
+              Key: "type"
+              StringValue: Default
+        - Id: address_type_command
+          Name: "address-type-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=AddressType load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: gl_journal_entry_command
+          Name: "gl-journal-entry-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=mambu entity_name=gl_journal_entry load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: nationalities_command
+          Name: "nationalities-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=Nationalities load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: gl_account_command
+          Name: "gl-account-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=mambu entity_name=gl_account load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: account_command
+          Name: "account-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=Account load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: customer_detalis_change_history_command
+          Name: "customer-detalis-change-history-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=CustomerDetailsChangeHistory load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: currency_command
+          Name: "currency-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=Currency load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: title_master_command
+          Name: "title-master-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=TitleMaster load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: application_command
+          Name: "application-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=Application load_type=full_table env=${EnvironmentPrefix}\n"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: client_command
+          Name: "client-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=mambu entity_name=client load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: countries_master_command
+          Name: "countries-master-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=CountriesMaster load_type=full_table env=${EnvironmentPrefix}\n"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: users_command
+          Name: "users-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=Users load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: addr_history_command
+          Name: "addr-history-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=AddressHistory load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: account_details_command
+          Name: "account-details-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=il entity_name=account_details load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: app_status_command
+          Name: "app-status-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=ApplicationStatus load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: req_type_command
+          Name: "req-type-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=RequestType load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: deposit_products_command
+          Name: "deposit-products-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=mambu entity_name=deposit_products load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: deposit_accounts_command
+          Name: "deposit-accounts-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=mambu entity_name=deposit_accounts load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: customer_profile_command
+          Name: "customer-profile-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=CustomerProfile load_type=full_table env=${EnvironmentPrefix}\n"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: notification_history_command
+          Name: "notification-history-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=il entity_name=notification_history load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: account_status_command
+          Name: "account-status-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=AccountStatus load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: deposit_transactions_command
+          Name: "deposit-transactions-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=mambu entity_name=deposit_transactions load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: address_command
+          Name: "address-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=Address load_type=full_table env=${EnvironmentPrefix}"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+        - Id: nominated_account_command
+          Name: "nominated-account-command"
+          Fields:
+            -
+              Key: "command"
+              StringValue: !Sub "cd ~/Dev/\nsource venv/bin/activate\npython main.py source=outsystem entity_name=NominatedAccount load_type=full_table env=${EnvironmentPrefix}\n"
+            -
+              Key: "type"
+              StringValue: ShellCommandActivity
+            -
+              Key: "schedule"
+              RefValue: PipelineSchedule
+            -
+              Key: "runsOn"
+              RefValue: ec2_resource
+            -
+              Key: "onFail"
+              RefValue: SnsAlarmActionOnfail
+            -
+              Key: "onSuccess"
+              RefValue: SnsAlarmActionOnSuccess
+
+  GlueEncryptionSetting:
+    Condition: IsNotDevEnv
+    Type: AWS::Glue::DataCatalogEncryptionSettings
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DataCatalogEncryptionSettings:
+        EncryptionAtRest:
+          CatalogEncryptionMode: SSE-KMS
+
+  GlueSecConfig:
+    Condition: IsNotDevEnv
+    Type: AWS::Glue::SecurityConfiguration
+    Properties:
+      EncryptionConfiguration:
+        S3Encryptions:
+          - S3EncryptionMode: SSE-S3
+      Name: !Sub "${EnvironmentPrefix}-Glue-Security-Configuration"
+
+  CrawlerConnection:
+    Type: AWS::Glue::Connection
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      ConnectionInput:
+        ConnectionType: NETWORK
+        Description: "Glue Crawler Connection"
+        Name: !Sub "${EnvironmentPrefix}-crawler-connection"
+        PhysicalConnectionRequirements:
+          SecurityGroupIdList:
+            - !Ref NodeSecurityGroup
+          SubnetId: !Ref DataPipelineSubnetId
+          AvailabilityZone: !Select
+            - '0'
+            - !GetAZs
+              Ref: 'AWS::Region'
+
+  AccountCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-account"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/Account'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  AccDetailsCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-account_details"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/IL_Data/account_details'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  AccStatusCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-accountstatus"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/AccountStatus'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  AddressCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-address"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/Address'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  AddrHistoryCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-addresshistory"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/AddressHistory'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  AddrTypeCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-addresstype"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/AddressType'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  AppCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-application"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/Application'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  AppStatusCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-applicationstatus"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/ApplicationStatus'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  ClientCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-client"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/Mambu_Data/client'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  ClientCustomCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-client_custom"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/Mambu_Data/client_custom'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  CountriesMasterCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-countriesmaster"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/CountriesMaster'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  CurrencyCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-currency"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/Currency'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  CustomerDetailsChangeHistoryCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-customerdetailschangehistory"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/CustomerDetailsChangeHistory'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  CustomerProfileCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-customerprofile"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/CustomerProfile'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  DepAccsCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-deposit_accounts"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/Mambu_Data/deposit_accounts'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  DepAccsCustomCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-deposit_accounts_custom"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/Mambu_Data/deposit_accounts_custom'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  DepProductsCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-deposit_products"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/Mambu_Data/deposit_products'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  DepTransCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-deposit_transactions"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/Mambu_Data/deposit_transactions'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  GLAccCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-gl_account"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/Mambu_Data/gl_account'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  GLJournalEntryCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-gl_journal_entry"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/Mambu_Data/gl_journal_entry'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  NationalitiesCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-nationalities"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/Nationalities'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  NominatedAccountCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-nominatedaccount"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/NominatedAccount'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  NotifyHistoryCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-notification_history"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/IL_Data/notification_history'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"
+
+  ReqTypeCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-gc-requesttype"
+      Role: !Ref GlueServiceRoleArn
+      DatabaseName: !Ref RedshiftDBName
+      Targets:
+        S3Targets:
+          - Path: !Sub '${S3BucketName}/OS_Data/RequestType'
+            ConnectionName: !Ref CrawlerConnection
+      Configuration: '{}'
+      SchemaChangePolicy:
+        UpdateBehavior: "LOG"
+        DeleteBehavior: "LOG"

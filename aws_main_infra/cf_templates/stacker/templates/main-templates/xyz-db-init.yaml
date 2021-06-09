@@ -1,0 +1,133 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: DataLake Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  LambdaPrefix:
+    Type: String
+    Description: Prefix for lambda Name
+  VPCID:
+    Type: String
+    Description: ID of DB VPC
+  PrivateSubnets:
+    Type: CommaDelimitedList
+    Description: Private subnet id list.
+  LambdaS3BucketName:
+    Type: String
+    Description: Lambda Code zip file S3 bucket name
+  ILSQLLambdaFileName:
+    Type: String
+    Description: IL SQL Lambda Code zip filename in S3
+  SecretArn:
+    Type: String
+    Description: IL DB Secret ARN
+  LambdaEnvRoleArn:
+    Type: String
+    Description: Role Arn to pass to Lambda
+    Default: 'arn::xxx'
+  ADBSecurityGroup:
+    Type: String
+    Description: ADB Security Group ID
+  SecGroupPort:
+    Type: Number
+    Description: Port to allow in ADB Security Group
+  StgSchema:
+    Type: String
+    Description: Role Arn to pass to Lambda
+    Default: 'xyz_stg'
+  LambdaKeyArn:
+    Type: String
+    Description: Arn of Lambda Key
+
+Resources:
+
+  LambdaSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-IL-DB-Lambda-SG'
+      GroupDescription: Security group for lambda
+      VpcId: !Ref VPCID
+
+  ADBLambdaSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description: Lambda to communicate with the IL DB
+      FromPort: !Ref SecGroupPort
+      GroupId: !Ref ADBSecurityGroup
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref LambdaSecurityGroup
+      ToPort: !Ref SecGroupPort
+
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+      Path: /
+
+  LabmdaPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: LambdaExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetResourcePolicy
+          - secretsmanager:GetSecretValue
+          - secretsmanager:DescribeSecret
+          - secretsmanager:ListSecretVersionIds
+          - ec2:DetachNetworkInterface
+          Resource: "*"
+
+  SQLInitLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentPrefix}-${LambdaPrefix}-db-init-lambda-func'
+      Runtime: python3.7
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: index.handler
+      MemorySize: 1024
+      Timeout: 900
+      KmsKeyArn: !Ref LambdaKeyArn
+      Environment:
+        Variables:
+          secret_name: !Ref SecretArn
+          stg_schema: !Ref StgSchema
+          env_prefix: !Ref EnvironmentPrefix
+          role_arn: !Ref LambdaEnvRoleArn
+      Code:
+        S3Bucket: !Ref LambdaS3BucketName
+        S3Key: !Ref ILSQLLambdaFileName
+      Description: Lambda to back custom resource for db init.
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Ref PrivateSubnets
+
+  DBCustomResource:
+    Type: Custom::SQLInit
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - SQLInitLambdaFunction
+        - Arn
+      Region:
+        Ref: AWS::Region

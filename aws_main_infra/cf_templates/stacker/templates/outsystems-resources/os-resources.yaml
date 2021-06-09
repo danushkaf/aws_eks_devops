@@ -1,0 +1,1376 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: OutSystems Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  VpcBlock:
+    Type: String
+    Default: 172.31.0.0/16
+    Description: >-
+      The CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR
+      range.
+  ILVPCID:
+    Type: String
+    Description: IL VPC ID
+  ILVpcBlock:
+    Type: String
+    Default: 192.168.0.0/16
+    Description: >-
+      The CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR
+      range.
+  ILPublicRouteTableID:
+    Type: String
+    Description: IL Public Route Table ID
+  ILPrivateRouteTableID:
+    Type: String
+    Description: IL Private Route Table ID
+  Subnet01Block:
+    Type: String
+    Default: 172.31.0.0/24
+    Description: CidrBlock for subnet 01 within the VPC
+  Subnet02Block:
+    Type: String
+    Default: 172.31.1.0/24
+    Description: CidrBlock for subnet 02 within the VPC
+  Subnet03Block:
+    Type: String
+    Default: 172.31.2.0/24
+    Description: CidrBlock for subnet 03 within the VPC
+  Subnet04Block:
+    Type: String
+    Default: 172.31.3.0/24
+    Description: CidrBlock for subnet 04 within the VPC
+  Subnet05Block:
+    Type: String
+    Default: 172.31.4.0/24
+    Description: CidrBlock for subnet 05 within the VPC
+  Subnet06Block:
+    Type: String
+    Default: 172.31.5.0/24
+    Description: CidrBlock for subnet 06 within the VPC
+  KeyName:
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Default: outsystems
+  NodeGroupName:
+    Type: String
+    Default: os
+    Description: Unique identifier for the Node Group.
+  DBClusterIdentifier:
+    Type: String
+    Description: Database Cluster Name
+    Default: OutSystemsDB
+  DatabaseUsername:
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 1 to 16 alphanumeric characters.
+    Description: The database admin account user name, between 1 to 16 alphanumeric characters.
+    MaxLength: '16'
+    MinLength: '1'
+    Type: String
+  DatabasePassword:
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+    Description: The database admin account password, between 8 to 41 alphanumeric characters.
+    MaxLength: '41'
+    MinLength: '8'
+    NoEcho: 'true'
+    Type: String
+  DBInstanceType:
+    Type: String
+    Default: db.t3.small
+    Description: Enter db Instance types.
+  DatabaseReplication:
+    Type: String
+    AllowedValues:
+      - 'Required'
+      - 'Not Required'
+    Default: Not Required
+    Description: Do this deployment need Database Replication or Not
+  RDSBackupRetentionPeriod:
+    Type: Number
+    Default: 7
+    Description: Database backup retention period in days.
+  SQLServerEngine:
+    Type: String
+    Default: "sqlserver-ex"
+    Description: "SQL Server Engine to be used."
+  SQLServerVersion:
+    Type: String
+    Default: "13.00.5850.14.v1"
+    Description: "SQL Server Version to be used."
+  SQLServerAllocatedStorage:
+    Type: String
+    Default: "100"
+    Description: "SQL Server Version to be used."
+  OutSystemsHostname:
+    Type: String
+    Description: "OutSystems Hostname to be used."
+    Default: dev.portal.xyzdev.co.
+  OutSystemsAPIHostname:
+    Type: String
+    Description: "OutSystems API Hostname to be used."
+    Default: dev-api.portal.xyz.com
+  OutSystemsCertArn:
+    Type: String
+    Description: "Certificate Arn for OutSystems LB"
+  OutSystemsAdminDBUsername:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Admin DB Username to be used."
+  OutSystemsAdminDBPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Admin DB Password to be used."
+  OutSystemsRuntimeDBAdminUsername:
+    Type: String
+    Description: "OutSystems RuntimeDBAdmin Username to be used."
+    MaxLength: '16'
+    MinLength: '1'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsRuntimeDBAdminPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems RuntimeDBAdmin Password to be used."
+    MaxLength: '41'
+    MinLength: '8'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsRuntimeLoggingDBAdminUsername:
+    Type: String
+    Description: "OutSystems RuntimeLoggingDBAdmin Username to be used."
+    MaxLength: '16'
+    MinLength: '1'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsRuntimeLoggingDBAdminPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems RuntimeLoggingDBAdmin Password to be used."
+    MaxLength: '41'
+    MinLength: '8'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsSessionDBAdminUsername:
+    Type: String
+    Description: "OutSystems SessionDBAdmin Username to be used."
+    MaxLength: '16'
+    MinLength: '1'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsSessionDBAdminPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems SessionDBAdmin Password to be used."
+    MaxLength: '41'
+    MinLength: '8'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsPlatformPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Platform Password to be used."
+  OutSystemsServicePassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Service Password to be used."
+  OutSystemsCatalogDatabaseName:
+    AllowedPattern: "[a-zA-Z0-9-_]+"
+    ConstraintDescription: must be between 4 to 30 alphanumeric characters.
+    Description: Database name for outsystems catalog database.
+    Default: CATALOGDEV
+    MaxLength: '30'
+    MinLength: '4'
+    Type: String
+  OutSystemsSessionDatabaseName:
+    AllowedPattern: "[a-zA-Z0-9-_]+"
+    ConstraintDescription: must be between 4 to 30 alphanumeric characters.
+    Description: Database name for outsystems session database.
+    Default: xyz_sessiondev
+    MaxLength: '30'
+    MinLength: '4'
+    Type: String
+  OutSystemsETLAdminDBUsername:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems ETL Admin DB Username to be used."
+  OutSystemsETLAdminDBPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems ETL Admin DB Password to be used."
+  OutSystemsETLRODBUsername:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems ETL RO DB Username to be used."
+  OutSystemsETLRODBPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems ETL RO DB Password to be used."
+  SecretKey:
+    Type: String
+    Description: ID of secret key
+
+Conditions:
+  IsRDSAdvancedFeatures: !Not [!Equals [!Ref SQLServerEngine, 'sqlserver-ex']]
+  DBReplicationRequired: !Equals [!Ref DatabaseReplication, 'Required']
+  IsProdEnv: !Equals [!Ref EnvironmentPrefix, 'prod']
+
+Resources:
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VpcBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-VPC'
+
+  FlowLogsRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-FlowLogsRole'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - vpc-flow-logs.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+
+  FlowLogsRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: FlowLogsRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          - logs:DescribeLogGroups
+          - logs:DescribeLogStreams
+          Resource: "*"
+
+  CICDFlowLogs:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt FlowLogsRole.Arn
+      LogGroupName: !Sub ${EnvironmentPrefix}-OS-VPC-FlowLogs
+      ResourceId: !Ref VPC
+      ResourceType: VPC
+      TrafficType: ALL
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-IG'
+
+  NatGateway1EIP:
+    Type: 'AWS::EC2::EIP'
+    DependsOn: VPCGatewayAttachment
+
+  NatGateway1:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-NG'
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref Subnet01
+
+  VPCGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  RouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-Public-RT'
+        - Key: Network
+          Value: Public
+
+  RouteTablePrivate:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-Private-RT'
+        - Key: Network
+          Value: Private
+
+  Route:
+    DependsOn: VPCGatewayAttachment
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  RoutePrivate:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref RouteTablePrivate
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  ILVPCPeering:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      PeerVpcId: !Ref ILVPCID
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentPrefix}-IL-VPCPeeringConnection
+      VpcId: !Ref VPC
+
+  PeeringRouteIL:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: !Ref ILVpcBlock
+      RouteTableId: !Ref RouteTable
+      VpcPeeringConnectionId: !Ref ILVPCPeering
+
+  PeeringPrivateRouteIL:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: !Ref ILVpcBlock
+      RouteTableId: !Ref RouteTablePrivate
+      VpcPeeringConnectionId: !Ref ILVPCPeering
+
+  PeeringRouteILPublicRouteTable:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: !Ref VpcBlock
+      RouteTableId: !Ref ILPublicRouteTableID
+      VpcPeeringConnectionId: !Ref ILVPCPeering
+
+  PeeringRouteILPrivateRouteTable:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: !Ref VpcBlock
+      RouteTableId: !Ref ILPrivateRouteTableID
+      VpcPeeringConnectionId: !Ref ILVPCPeering
+
+  Subnet01:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 01
+    Properties:
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet01Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Pub-Subnet01'
+
+  Subnet02:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 02
+    Properties:
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet02Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-Pub-Subnet02'
+
+  Subnet03:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 03
+    Properties:
+      AvailabilityZone: !Select
+        - '2'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet03Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-Pub-Subnet03'
+
+  Subnet04:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 04
+    Properties:
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet04Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-Pri-Subnet04'
+
+  Subnet05:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 05
+    Properties:
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet05Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-Pri-Subnet05'
+
+  Subnet06:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 06
+    Properties:
+      AvailabilityZone: !Select
+        - '2'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet06Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-Pri-Subnet06'
+
+  APIGWVPCEP:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument: '{
+        "Version":"2012-10-17",
+        "Statement":[{
+          "Effect":"Allow",
+          "Principal": "*",
+          "Action":["*"],
+          "Resource":["*"]
+        }]
+      }'
+      SubnetIds:
+        - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+      SecurityGroupIds:
+        - !Ref VPCEPNodeSecurityGroup
+      PrivateDnsEnabled: true
+      VpcEndpointType: Interface
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.execute-api
+      VpcId: !Ref VPC
+
+  EC2VPCEP:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument: !Sub '{
+        "Version":"2012-10-17",
+        "Statement":[{
+          "Effect":"Allow",
+          "Principal":"*",
+          "Action":["ec2:*"],
+          "Resource":["*"]
+        }]
+      }'
+      SubnetIds:
+        - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+      SecurityGroupIds:
+        - !Ref VPCEPNodeSecurityGroup
+      PrivateDnsEnabled: true
+      VpcEndpointType: Interface
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2
+      VpcId: !Ref VPC
+
+  Subnet01RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet01
+      RouteTableId: !Ref RouteTable
+
+  Subnet02RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet02
+      RouteTableId: !Ref RouteTable
+
+  Subnet03RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet03
+      RouteTableId: !Ref RouteTable
+
+  Subnet04RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet04
+      RouteTableId: !Ref RouteTablePrivate
+
+  Subnet05RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet05
+      RouteTableId: !Ref RouteTablePrivate
+
+  Subnet06RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet06
+      RouteTableId: !Ref RouteTablePrivate
+
+  ALBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-ALB-SG'
+      GroupDescription: Public ALB Security Group
+      VpcId: !Ref VPC
+
+  PrivateALBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-Private-ALB-SG'
+      GroupDescription: Private ALB Security Group
+      VpcId: !Ref VPC
+
+  NodeInstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-Node-IR'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+        - "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+        - "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      Path: /
+
+  AssumePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: NodeInstanceRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - sts:AssumeRole
+          Resource: "*"
+
+  CloudWatchPutMetricsRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: CloudWatch_PutMetricData
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: CloudWatchPutMetricData
+          Effect: Allow
+          Action:
+          - cloudwatch:PutMetricData
+          Resource:
+          - "*"
+      Roles:
+      - Ref: NodeInstanceRole
+
+  NodeInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: /
+      Roles:
+        - Ref: NodeInstanceRole
+
+  NodeSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-NSG'
+      GroupDescription: Security group for all nodes in the cluster
+      VpcId: !Ref VPC
+
+  VPCEPNodeSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Security group for VPC Endpoints
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-os-VPCEP-SG'
+
+  VPCEPSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: VPCEPNodeSecurityGroup
+    Properties:
+      Description: Allow node to communicate with each other
+      FromPort: 0
+      GroupId: !Ref VPCEPNodeSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref VPCEPNodeSecurityGroup
+      ToPort: 65535
+
+  VPCEPNodeSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn:
+      - NodeSecurityGroup
+      - VPCEPNodeSecurityGroup
+    Properties:
+      Description: Allow node to communicate with each other
+      FromPort: 0
+      GroupId: !Ref VPCEPNodeSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      ToPort: 65535
+
+  NodeVPCEPSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn:
+      - NodeSecurityGroup
+      - VPCEPNodeSecurityGroup
+    Properties:
+      Description: Allow node to communicate with each other
+      FromPort: 0
+      GroupId: !Ref NodeSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref VPCEPNodeSecurityGroup
+      ToPort: 65535
+
+  NodeSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description: Allow node to communicate with each other
+      FromPort: 0
+      GroupId: !Ref NodeSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      ToPort: 65535
+
+  ALBSecurityGroupIngress443:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description: Allow internet access through SSL
+      FromPort: 443
+      CidrIp: 0.0.0.0/0
+      GroupId: !Ref ALBSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+
+  ALBSecurityGroupSelfIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description: Allow internet access through SSL
+      FromPort: 0
+      GroupId: !Ref ALBSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      ToPort: 65535
+
+  PrivateALBSecurityGroupSelfIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description: Allow internet access through SSL
+      FromPort: 0
+      GroupId: !Ref PrivateALBSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref PrivateALBSecurityGroup
+      ToPort: 65535
+
+  ALBSecurityGroupIngress80:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description: Allow internet access
+      FromPort: 80
+      CidrIp: 0.0.0.0/0
+      GroupId: !Ref ALBSecurityGroup
+      IpProtocol: tcp
+      ToPort: 80
+
+  PrivateALBSecurityGroupIngress80:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description: Allow outside access
+      FromPort: 80
+      CidrIp: !Ref ILVpcBlock
+      GroupId: !Ref PrivateALBSecurityGroup
+      IpProtocol: tcp
+      ToPort: 80
+
+  ALBSecurityGroupToNodeSecurityGroupEgress:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    Properties:
+      Description: Allow the alb to communicate with OS
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      FromPort: 80
+      GroupId: !Ref ALBSecurityGroup
+      IpProtocol: tcp
+      ToPort: 80
+
+  ALBSecurityGroupToNodeSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description: Allow the alb to communicate with OS
+      SourceSecurityGroupId: !Ref ALBSecurityGroup
+      FromPort: 80
+      GroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      ToPort: 80
+
+  ALBSecurityGroupToNodeSecurityGroupEgress443:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    Properties:
+      Description: Allow the alb to communicate with OS
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      FromPort: 443
+      GroupId: !Ref ALBSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+
+  ALBSecurityGroupToNodeSecurityGroupIngress443:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description: Allow the alb to communicate with OS
+      SourceSecurityGroupId: !Ref ALBSecurityGroup
+      FromPort: 443
+      GroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+
+  ADBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Security group for db
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-DB-SG'
+
+  ADBSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: ADBSecurityGroup
+    Properties:
+      Description: Allow Kube nodes to communicate with the DB
+      FromPort: 1433
+      GroupId: !Ref ADBSecurityGroup
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      ToPort: 1433
+
+  ADBSecurityGroupSelfIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: ADBSecurityGroup
+    Properties:
+      Description: Allow Kube nodes to communicate with the DB
+      FromPort: 0
+      GroupId: !Ref ADBSecurityGroup
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref ADBSecurityGroup
+      ToPort: 65535
+
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: CloudFormation managed DB subnet group.
+      SubnetIds:
+        - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+
+  RDSKey:
+    Condition: IsProdEnv
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: !Sub "This is ${EnvironmentPrefix} environment customer managed CMK for RDS Data at rest encrytion."
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: rds.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Principal:
+              AWS:
+                - !GetAtt CustomResourceLambdaExecutionRole.Arn
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:*"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+  CustomResourceLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonRDSFullAccess'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Path: /
+
+  CustomResourceLambdaPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: CustomResourceLambdaExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - kms:*
+          Resource: "*"
+
+  DatabasePrimaryInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: sqlserver-ex
+      DeletionProtection: true
+      EngineVersion: !Ref "SQLServerVersion"
+      AllocatedStorage: !Ref "SQLServerAllocatedStorage"
+      DBInstanceClass: !Ref "DBInstanceType"
+      DBInstanceIdentifier: !Sub "${DBClusterIdentifier}-Primary"
+      BackupRetentionPeriod: !Ref "RDSBackupRetentionPeriod"
+      StorageEncrypted: !If
+        - IsRDSAdvancedFeatures
+        - True
+        - False
+      KmsKeyId: !If
+        - IsProdEnv
+        - !Ref RDSKey
+        - !Ref AWS::NoValue
+      PreferredBackupWindow: 01:00-02:00
+      PreferredMaintenanceWindow: mon:03:00-mon:04:00
+      DBSubnetGroupName: !Ref "DatabaseSubnetGroup"
+      DBSubnetGroupName: !Ref "DatabaseSubnetGroup"
+      BackupRetentionPeriod: !Ref "RDSBackupRetentionPeriod"
+      MasterUsername: !Ref "DatabaseUsername"
+      MasterUserPassword: !Ref "DatabasePassword"
+      LicenseModel: license-included
+      MultiAZ: !If
+        - IsRDSAdvancedFeatures
+        - True
+        - False
+      VPCSecurityGroups:
+         -
+            !Ref "ADBSecurityGroup"
+      Tags:
+         -
+            Key: "Name"
+            Value: !Sub "${DBClusterIdentifier}-Primary"
+
+  DatabaseReplicationInstance:
+    Condition: DBReplicationRequired
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: sqlserver-ex
+      EngineVersion: !Ref "SQLServerVersion"
+      AllocatedStorage: !Ref "SQLServerAllocatedStorage"
+      DBInstanceClass: !Ref "DBInstanceType"
+      DBInstanceIdentifier: !Sub "${DBClusterIdentifier}-Replica"
+      BackupRetentionPeriod: !Ref "RDSBackupRetentionPeriod"
+      StorageEncrypted: !If
+        - IsRDSAdvancedFeatures
+        - True
+        - False
+      KmsKeyId: !If
+        - IsProdEnv
+        - !Ref RDSKey
+        - !Ref AWS::NoValue
+      PreferredBackupWindow: 01:00-02:00
+      PreferredMaintenanceWindow: mon:03:00-mon:04:00
+      DBSubnetGroupName: !Ref "DatabaseSubnetGroup"
+      DBSubnetGroupName: !Ref "DatabaseSubnetGroup"
+      BackupRetentionPeriod: !Ref "RDSBackupRetentionPeriod"
+      MasterUsername: !Ref "DatabaseUsername"
+      MasterUserPassword: !Ref "DatabasePassword"
+      MultiAZ: !If
+        - IsRDSAdvancedFeatures
+        - True
+        - False
+      SourceDBInstanceIdentifier: !Ref DatabasePrimaryInstance
+      SourceRegion: !Ref AWS::Region
+      LicenseModel: license-included
+      VPCSecurityGroups:
+         -
+            !Ref "ADBSecurityGroup"
+      Tags:
+         -
+            Key: "Name"
+            Value: !Sub "${DBClusterIdentifier}-Primary"
+
+  DBPasswordSecret:
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Description: "This is a Secrets Manager secret for OS RDS DB instance"
+      Name: !Sub '${EnvironmentPrefix}-OS-DB-Password'
+      KmsKeyId: !Ref SecretKey
+      SecretString: !Sub '{"username":"${DatabaseUsername}","password":"${DatabasePassword}","catalogDatabaseName":"${OutSystemsCatalogDatabaseName}"}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-DB-Password'
+
+  SecretRDSAttachment:
+    Type: "AWS::SecretsManager::SecretTargetAttachment"
+    Properties:
+      SecretId: !Ref DBPasswordSecret
+      TargetId: !Ref DatabasePrimaryInstance
+      TargetType: AWS::RDS::DBInstance
+
+  ETLAdminDBPasswordSecret:
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Description: "This is a Secrets Manager secret for OS RDS DB instance"
+      Name: !Sub '${EnvironmentPrefix}-OS-ETL-Admin-DB-Password'
+      KmsKeyId: !Ref SecretKey
+      SecretString: !Sub '{"username":"${OutSystemsETLAdminDBUsername}","password":"${OutSystemsETLAdminDBPassword}","catalogDatabaseName":"${OutSystemsCatalogDatabaseName}"}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-ETL-Admin-DB-Password'
+
+  ETLRODBPasswordSecret:
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Description: "This is a Secrets Manager secret for OS RDS DB instance"
+      Name: !Sub '${EnvironmentPrefix}-OS-ETL-RO-DB-Password'
+      KmsKeyId: !Ref SecretKey
+      SecretString: !Sub '{"username":"${OutSystemsETLRODBUsername}","password":"${OutSystemsETLRODBPassword}","catalogDatabaseName":"${OutSystemsCatalogDatabaseName}"}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-ETL-RO-DB-Password'
+
+  ETLSecretRDSAttachment:
+    Type: "AWS::SecretsManager::SecretTargetAttachment"
+    Properties:
+      SecretId: !Ref ETLRODBPasswordSecret
+      TargetId: !Ref DatabasePrimaryInstance
+      TargetType: AWS::RDS::DBInstance
+
+  OSPasswordSecret:
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Description: "This is a Secrets Manager secret for an RDS DB instance"
+      Name: !Sub '${EnvironmentPrefix}-OS-Credentials'
+      KmsKeyId: !Ref SecretKey
+      SecretString: !Sub '{"OutSystemsAdminDBUsername":"${OutSystemsAdminDBUsername}","OutSystemsAdminDBPassword":"${OutSystemsAdminDBPassword}","OutSystemsAdminDBPassword":"${OutSystemsAdminDBPassword}","OutSystemsRuntimeDBAdminUsername":"${OutSystemsRuntimeDBAdminUsername}","OutSystemsRuntimeDBAdminPassword":"${OutSystemsRuntimeDBAdminPassword}","OutSystemsRuntimeLoggingDBAdminUsername":"${OutSystemsRuntimeLoggingDBAdminUsername}","OutSystemsRuntimeLoggingDBAdminPassword":"${OutSystemsRuntimeLoggingDBAdminPassword}","OutSystemsSessionDBAdminUsername":"${OutSystemsSessionDBAdminUsername}","OutSystemsSessionDBAdminPassword":"${OutSystemsSessionDBAdminPassword}","OutSystemsPlatformPassword":"${OutSystemsPlatformPassword}","OutSystemsServicePassword":"${OutSystemsServicePassword}","OutSystemsCatalogDatabaseName":"${OutSystemsCatalogDatabaseName}","OutSystemsSessionDatabaseName":"${OutSystemsSessionDatabaseName}","OutSystemsETLAdminDBUsername":"${OutSystemsETLAdminDBUsername}","OutSystemsETLAdminDBPassword":"${OutSystemsETLAdminDBPassword}","OutSystemsETLRODBUsername":"${OutSystemsETLRODBUsername}","OutSystemsETLRODBPassword":"${OutSystemsETLRODBPassword}"}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-Credentials'
+
+  OSLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: deletion_protection.enabled
+          Value: true
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Subnets:
+        - !Ref Subnet01
+        - !Ref Subnet02
+        - !Ref Subnet03
+
+  TargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      TargetType: instance
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTPS
+      HealthCheckPath: /
+      HealthCheckPort: 443
+      HealthCheckIntervalSeconds: 125
+      HealthCheckTimeoutSeconds: 110
+      HealthyThresholdCount: 5
+      UnhealthyThresholdCount: 10
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 600
+        - Key: stickiness.enabled
+          Value: true
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: slow_start.duration_seconds
+          Value: 600
+      Matcher:
+        HttpCode: "200,302,403,404"
+      Port: 443
+      Protocol: HTTPS
+      VpcId: !Ref VPC
+
+  PrivateTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      TargetType: instance
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTPS
+      HealthCheckPath: /
+      HealthCheckPort: 443
+      HealthCheckIntervalSeconds: 125
+      HealthCheckTimeoutSeconds: 110
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 10
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 600
+        - Key: stickiness.enabled
+          Value: true
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: slow_start.duration_seconds
+          Value: 600
+      Matcher:
+        HttpCode: "200,302,403,404"
+      Port: 443
+      Protocol: HTTPS
+      VpcId: !Ref VPC
+
+  HTTPListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - RedirectConfig:
+            Host: "#{host}"
+            Path: "/#{path}"
+            Port: 443
+            Protocol: "HTTPS"
+            Query: "#{query}"
+            StatusCode: HTTP_301
+          Type: redirect
+      LoadBalancerArn: !Ref OSLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  HTTPSListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      Certificates:
+      - CertificateArn: !Ref OutSystemsCertArn
+      DefaultActions:
+      - Type: "redirect"
+        RedirectConfig:
+          Protocol: "HTTPS"
+          Port: 443
+          Host: "#{host}"
+          Path: "/Registration"
+          StatusCode: HTTP_301
+      LoadBalancerArn: !Ref OSLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+
+  OSPrivateLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Scheme: internal
+      LoadBalancerAttributes:
+        - Key: deletion_protection.enabled
+          Value: true
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Subnets:
+        - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+
+  PrivateHTTPListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: 403
+            ContentType: application/json
+            MessageBody: '{"Status" : 403, "Message" : "Not authorized to access this path."}'
+      LoadBalancerArn: !Ref OSPrivateLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  PrivateHTTPSListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      Certificates:
+      - CertificateArn: !Ref OutSystemsCertArn
+      DefaultActions:
+      - Type: "redirect"
+        RedirectConfig:
+          Protocol: "HTTPS"
+          Port: 443
+          Host: "#{host}"
+          Path: "/ServiceCenter"
+          StatusCode: HTTP_301
+      LoadBalancerArn: !Ref OSPrivateLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+
+  PrivateAPIAllowHTTPListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref PrivateTargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /IL_API_Exposed/*
+      ListenerArn: !Ref PrivateHTTPListener
+      Priority: 1
+
+  PrivateAPIAllowServiceCenterHTTPListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref PrivateTargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ServiceCenter
+              - /ServiceCenter/*
+              - /Users
+              - /Users/*
+      ListenerArn: !Ref PrivateHTTPSListener
+      Priority: 1
+
+  PrivateAPIAllowServiceCenterHTTPListenerRule2:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref PrivateTargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /test
+              - /test/*
+              - /content
+              - /content/*
+      ListenerArn: !Ref PrivateHTTPSListener
+      Priority: 2
+
+Outputs:
+  SubnetIds:
+    Description: All subnets in the VPC
+    Value: !Join
+      - ','
+      - - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-SubnetIds"
+
+  PublicSubnetIds:
+    Description: Public subnets in the VPC
+    Value: !Join
+      - ','
+      - - !Ref Subnet01
+        - !Ref Subnet02
+        - !Ref Subnet03
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-PublicSubnetIds"
+
+  VpcId:
+    Description: The VPC Id
+    Value: !Ref VPC
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-VpcId"
+
+  AllSubnetIds:
+    Description: All subnets in the VPC
+    Value: !Join
+      - ','
+      - - !Ref Subnet01
+        - !Ref Subnet02
+        - !Ref Subnet03
+        - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-AllSubnetIds"
+
+  OSLBDNSName:
+    Description: DNS Name for the ALB
+    Value: !GetAtt OSLoadBalancer.DNSName
+
+  OSLBDNSHostedZoneID:
+    Description: Hosted Zone ID for the ALB
+    Value: !GetAtt OSLoadBalancer.CanonicalHostedZoneID
+
+  ADBSecurityGroup:
+    Description: The security group for the node group
+    Value: !Ref ADBSecurityGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-ADBSecurityGroup"
+
+  RouteTable:
+    Description: Public RouteTable ID
+    Value: !Ref RouteTable
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-RouteTable"
+
+  RouteTablePrivate:
+    Description: Private RouteTable ID
+    Value: !Ref RouteTablePrivate
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-RouteTablePrivate"
+
+  OSLoadBalancer:
+    Description: OS Server LoadBalancer
+    Value: !Ref OSLoadBalancer
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-OSLoadBalancer"
+
+  TargetGroup:
+    Description: OS Server TargetGroup
+    Value: !Ref TargetGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-TargetGroup"
+
+  HTTPSListener:
+    Description: OS Server HTTPSListener
+    Value: !Ref HTTPSListener
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-HTTPSListener"
+
+  PrivateTargetGroup:
+    Description: OS Server Private TargetGroup
+    Value: !Ref PrivateTargetGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-PrivateTargetGroup"
+
+  ALBSecurityGroup:
+    Description: OS Server ALBSecurityGroup
+    Value: !Ref ALBSecurityGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-ALBSecurityGroup"
+
+  NodeSecurityGroup:
+    Description: OS Server NodeSecurityGroup
+    Value: !Ref NodeSecurityGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-NodeSecurityGroup"
+
+  NodeInstanceProfile:
+    Description: OS Server NodeInstanceProfile
+    Value: !GetAtt NodeInstanceProfile.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-NodeInstanceProfile"
+
+  NodeInstanceRole:
+    Description: OS Server NodeInstanceRole
+    Value: !GetAtt NodeInstanceRole.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-NodeInstanceRole"
+
+  TargetGroupFullName:
+    Description: OS Server TargetGroupFullName
+    Value: !GetAtt TargetGroup.TargetGroupFullName
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-TargetGroupFullName"
+
+  LoadBalancerFullName:
+    Description: OS Server LoadBalancerFullName
+    Value: !GetAtt OSLoadBalancer.LoadBalancerFullName
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-LoadBalancerFullName"
+
+  DatabasePrimaryInstanceEndpointAddress:
+    Description: OS Server Database Primary Instance EndpointAddress
+    Value: !GetAtt DatabasePrimaryInstance.Endpoint.Address
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-DatabasePrimaryInstanceEndpointAddress"
+
+  OSPrivateLoadBalancerDNSName:
+    Description: DNS Name for the Private ALB
+    Value: !GetAtt OSPrivateLoadBalancer.DNSName
+
+  CustomResourceLambdaExecutionRoleArn:
+    Description: Custom Resource Lambda Execution Role
+    Value: !GetAtt CustomResourceLambdaExecutionRole.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-CustomResourceLambdaExecutionRoleArn"

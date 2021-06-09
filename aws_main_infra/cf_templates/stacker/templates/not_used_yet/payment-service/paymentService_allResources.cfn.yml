@@ -1,0 +1,854 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS resources for the secrets to be created for Payment service.
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    AllowedValues:
+    - dev
+    - qa
+    - uat
+    - prod
+  SFCognitoDomain:
+    Type: String
+    Default: sf-domain
+  TempPasswordValidityDays:
+    Type: Number
+    Default: 7
+  VisibilityTimeOut:
+    Default: 30
+    Type: Number
+    Description: The visibility timeout in seconds for all the queues.
+  MessageRetentionPeriodInSeconds:
+    Default: 345600
+    Type: Number
+    Description: The message retention period in seconds.
+  MaxReceiveCount:
+    Default: 4
+    Type: Number
+    Description: The max receive count means how many times the SQS queue will retry
+      delivering msg before sending it in Dead letter queue.
+  MaxMessageSizeInBytes:
+    Default: 262144
+    Type: Number
+  ReceiveMessageWaitTimeSeconds:
+    Default: 20
+    Type: Number
+    Description: Set a value greater than 0 to enable long polling. Its good to use
+      long polling
+  S3BucketNameContainingLambdaPackages:
+    Type: String
+    Default: xyz-lambda-packages
+    Description: Specify the name of S3 bucket which has all the lambda packages.
+      Note that this bucket should be present already , else an error will be thrown.
+  MemorySizeForLambda:
+    Type: Number
+    Default: 128
+    MinValue: 128
+    MaxValue: 512
+    Description: Provide the memory size in MB for lambda execution
+  NumDaysToRetainLambdaExecutionLogs:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 60
+  NodeSecurityGroup:
+    Type: String
+    Default: arn:aws:iam::213074200201:role/xyz-qa-infra-london-region-NodeInstanceRole-V9VAFTB8TWYV
+    Description: Input the ARN of the node security group of nodes in EKS cluster for this environment    
+Resources:
+  SFCognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName:
+        Fn::Sub: "${EnvironmentPrefix}-SF-User-Pool"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays:
+            Ref: TempPasswordValidityDays
+      Schema:
+      - Name: sub
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: false
+        Required: true
+        StringAttributeConstraints:
+          MinLength: '1'
+          MaxLength: '2048'
+      - Name: name
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: given_name
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: family_name
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: middle_name
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: nickname
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: preferred_username
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: profile
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: picture
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: website
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: email
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: true
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: email_verified
+        AttributeDataType: Boolean
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+      - Name: gender
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: birthdate
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '10'
+          MaxLength: '10'
+      - Name: zoneinfo
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: locale
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: phone_number
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: address
+        AttributeDataType: String
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        StringAttributeConstraints:
+          MinLength: '0'
+          MaxLength: '2048'
+      - Name: updated_at
+        AttributeDataType: Number
+        DeveloperOnlyAttribute: false
+        Mutable: true
+        Required: false
+        NumberAttributeConstraints:
+          MinValue: '0'
+      AutoVerifiedAttributes:
+      - email
+      MfaConfiguration: 'OFF'
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      UserPoolTags: {}
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+        - Priority: 1
+          Name: verified_email
+        - Priority: 2
+          Name: verified_phone_number
+      UsernameConfiguration:
+        CaseSensitive: false
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_CODE
+  SFCognitoUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref SFCognitoUserPool
+      Domain: !Join ['-', [!Ref EnvironmentPrefix, !Ref SFCognitoDomain] ] 
+  SFUserPoolAccountsResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      UserPoolId:
+        Ref: SFCognitoUserPool
+      Identifier: accounts
+      Scopes:
+      - ScopeName: post
+        ScopeDescription: Create
+      - ScopeName: get
+        ScopeDescription: Get
+      - ScopeName: del
+        ScopeDescription: Delete
+      - ScopeName: put
+        ScopeDescription: Update
+      Name: accounts
+  SFUserPoolNotificationsResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      UserPoolId:
+        Ref: SFCognitoUserPool
+      Identifier: notifications
+      Scopes:
+      - ScopeName: read
+        ScopeDescription: Read notifications
+      - ScopeName: send
+        ScopeDescription: Send notification
+      Name: notifications
+  SFUserPoolProductsResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      UserPoolId:
+        Ref: SFCognitoUserPool
+      Identifier: products
+      Scopes:
+      - ScopeName: read
+        ScopeDescription: Read
+      - ScopeName: update
+        ScopeDescription: Update
+      - ScopeName: create
+        ScopeDescription: Create
+      - ScopeName: delete
+        ScopeDescription: Delete
+      Name: products
+  SFCongnitoUserPoolAppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      AllowedOAuthScopes:
+      - Fn::Join:
+        - "/"
+        - - Ref: SFUserPoolAccountsResourceServer
+          - post
+      - Fn::Join:
+        - "/"
+        - - Ref: SFUserPoolAccountsResourceServer
+          - get
+      - Fn::Join:
+        - "/"
+        - - Ref: SFUserPoolNotificationsResourceServer
+          - send
+      SupportedIdentityProviders:
+      - COGNITO
+      ClientName: SfClient
+      UserPoolId:
+        Ref: SFCognitoUserPool
+      GenerateSecret: true
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+      - client_credentials
+  PaymentAckDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: "${EnvironmentPrefix}-dlq-payment-ack-queue.fifo"
+      DelaySeconds: 0
+      MaximumMessageSize:
+        Ref: MaxMessageSizeInBytes
+      MessageRetentionPeriod:
+        Ref: MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds:
+        Ref: ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout:
+        Ref: VisibilityTimeOut
+      FifoQueue: true
+      KmsMasterKeyId: alias/aws/sqs
+  PaymentAckQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: "${EnvironmentPrefix}-payment-ack-queue.fifo"
+      DelaySeconds: 0
+      MaximumMessageSize:
+        Ref: MaxMessageSizeInBytes
+      MessageRetentionPeriod:
+        Ref: MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds:
+        Ref: ReceiveMessageWaitTimeSeconds
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt:
+          - PaymentAckDLQ
+          - Arn
+        maxReceiveCount:
+          Ref: MaxReceiveCount
+      VisibilityTimeout:
+        Ref: VisibilityTimeOut
+      FifoQueue: true
+      KmsMasterKeyId: alias/aws/sqs
+  SFeventDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: "${EnvironmentPrefix}-dlq-sf-event-queue.fifo"
+      DelaySeconds: 0
+      MaximumMessageSize:
+        Ref: MaxMessageSizeInBytes
+      MessageRetentionPeriod:
+        Ref: MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds:
+        Ref: ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout:
+        Ref: VisibilityTimeOut
+      FifoQueue: true
+      KmsMasterKeyId: alias/aws/sqs
+  SFeventQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: "${EnvironmentPrefix}-sf-event-queue.fifo"
+      DelaySeconds: 0
+      MaximumMessageSize:
+        Ref: MaxMessageSizeInBytes
+      MessageRetentionPeriod:
+        Ref: MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds:
+        Ref: ReceiveMessageWaitTimeSeconds
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt:
+          - SFeventDLQ
+          - Arn
+        maxReceiveCount:
+          Ref: MaxReceiveCount
+      VisibilityTimeout:
+        Ref: VisibilityTimeOut
+      FifoQueue: true
+      KmsMasterKeyId: alias/aws/sqs
+  AccountCreationAckDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: "${EnvironmentPrefix}-dlq-account-creation-ack-queue.fifo"
+      DelaySeconds: 0
+      MaximumMessageSize:
+        Ref: MaxMessageSizeInBytes
+      MessageRetentionPeriod:
+        Ref: MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds:
+        Ref: ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout:
+        Ref: VisibilityTimeOut
+      FifoQueue: true
+      KmsMasterKeyId: alias/aws/sqs
+  AccountCreationAckQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: "${EnvironmentPrefix}-account-creation-ack-queue.fifo"
+      DelaySeconds: 0
+      MaximumMessageSize:
+        Ref: MaxMessageSizeInBytes
+      MessageRetentionPeriod:
+        Ref: MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds:
+        Ref: ReceiveMessageWaitTimeSeconds
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt:
+          - AccountCreationAckDLQ
+          - Arn
+        maxReceiveCount:
+          Ref: MaxReceiveCount
+      VisibilityTimeout:
+        Ref: VisibilityTimeOut
+      FifoQueue: true
+      KmsMasterKeyId: alias/aws/sqs
+  AccountCreationDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: "${EnvironmentPrefix}-dlq-account-creation-queue.fifo"
+      DelaySeconds: 0
+      MaximumMessageSize:
+        Ref: MaxMessageSizeInBytes
+      MessageRetentionPeriod:
+        Ref: MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds:
+        Ref: ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout:
+        Ref: VisibilityTimeOut
+      FifoQueue: true
+      KmsMasterKeyId: alias/aws/sqs
+  AccountCreationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: "${EnvironmentPrefix}-account-creation-queue.fifo"
+      DelaySeconds: 0
+      MaximumMessageSize:
+        Ref: MaxMessageSizeInBytes
+      MessageRetentionPeriod:
+        Ref: MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds:
+        Ref: ReceiveMessageWaitTimeSeconds
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt:
+          - AccountCreationDLQ
+          - Arn
+        maxReceiveCount:
+          Ref: MaxReceiveCount
+      VisibilityTimeout:
+        Ref: VisibilityTimeOut
+      FifoQueue: true
+      KmsMasterKeyId: alias/aws/sqs
+  TransferFundsDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: "${EnvironmentPrefix}-dlq-transfer-funds-queue.fifo"
+      DelaySeconds: 0
+      MaximumMessageSize:
+        Ref: MaxMessageSizeInBytes
+      MessageRetentionPeriod:
+        Ref: MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds:
+        Ref: ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout:
+        Ref: VisibilityTimeOut
+      FifoQueue: true
+      KmsMasterKeyId: alias/aws/sqs
+  TransferFundsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName:
+        Fn::Sub: "${EnvironmentPrefix}-transfer-funds-queue.fifo"
+      DelaySeconds: 0
+      MaximumMessageSize:
+        Ref: MaxMessageSizeInBytes
+      MessageRetentionPeriod:
+        Ref: MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds:
+        Ref: ReceiveMessageWaitTimeSeconds
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt:
+          - TransferFundsDLQ
+          - Arn
+        maxReceiveCount:
+          Ref: MaxReceiveCount
+      VisibilityTimeout:
+        Ref: VisibilityTimeOut
+      FifoQueue: true
+      KmsMasterKeyId: alias/aws/sqs
+
+  PaymentTransferDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-payment-transfer-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  PaymentTransferQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-payment-transfer-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt PaymentTransferDLQ.Arn
+        maxReceiveCount: !Ref MaxReceiveCount 
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  CBInitiatePaymentDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-cb-initiate-payment-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  CBInitiatePaymentQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-cb-initiate-payment-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt CBInitiatePaymentDLQ.Arn
+        maxReceiveCount: !Ref MaxReceiveCount 
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"  
+
+  AccountUpdateDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-cb-account-update-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  AccountUpdateQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-cb-account-update-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt AccountUpdateDLQ.Arn
+        maxReceiveCount: !Ref MaxReceiveCount 
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"   
+
+  AccountClosureDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-account-closure-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"
+
+  
+  AccountClosureQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentPrefix}-account-closure-queue.fifo'
+      DelaySeconds: 0
+      MaximumMessageSize: !Ref MaxMessageSizeInBytes 
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      ReceiveMessageWaitTimeSeconds: !Ref ReceiveMessageWaitTimeSeconds
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt AccountClosureDLQ.Arn
+        maxReceiveCount: !Ref MaxReceiveCount 
+      VisibilityTimeout: !Ref VisibilityTimeOut 
+      FifoQueue:  true
+      KmsMasterKeyId: "alias/aws/sqs"               
+
+  SFCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: This key contains SF credentials- Client id, secret, username,
+        password
+      SecretString: '{ "ClientId": "3MVG9Lf04EwncL7n3J4H3Yp.aa8PYF2gBNkDJ5ltihEMVcGPEFRVSmTkKFFQftCUZfaEZz0PK7AyBqkr1C4pp",
+        "ClientSecret": "941F3090D5A4577C774E59CE2676B5428732D6CE2710AB0C0FA5CFAAE39F52FC",
+        "UserName": "data.integrationmbc@persistent.com.develop", "Password": "Test@Parx2020tYrpVdJVqNTK6WeTUjhto083F"
+        }'
+      Name:
+        Fn::Sub: "${EnvironmentPrefix}-SF-Credentials"
+
+  SFCredentialsResourcePolicy:
+    Type: "AWS::SecretsManager::ResourcePolicy"
+    Properties:
+      SecretId: !Ref SFCredentialsSecret
+      ResourcePolicy: 
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS: !Ref NodeSecurityGroup
+          Action: secretsmanager:GetSecretValue
+          Resource: "*"
+
+  MambuCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Mambu username and password to be used in Mambu Lambda Authorizer
+      SecretString: '{ "UserName": "admin", "Password": "secret" }'
+      Name:
+        Fn::Sub: "${EnvironmentPrefix}-Mambu-Credentials"
+
+
+  MambuCredentialsResourcePolicy:
+    Type: "AWS::SecretsManager::ResourcePolicy"
+    Properties:
+      SecretId: !Ref MambuCredentialsSecret
+      ResourcePolicy: 
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS: !Ref NodeSecurityGroup
+          Action: secretsmanager:GetSecretValue
+          Resource: "*"
+
+  ClearBankCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Clear bank Public key to verify CB signature
+      SecretString: "-----BEGIN PUBLIC KEY-----\n
+                    MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAlXlE+v8OBUTcHODcpMgC
+                    BX6M2+N6BlLC5/y4Z0xD5quS0ry9Wm9NAXD61KHIZHMXTIGjy6NXlovseAmLzL82
+                    q88ZjsGOjqVh8NL5Gz7uTqWcARMOVlZiara2/JufQ5XFYv1EA/Y5+7dezPZDZuFd
+                    hj7U2lFSV/6wB3uZuDVoD/7Fy0L+yGUt7mgTHU0x91Dvc2m70+Gi/Zqi1xe0GcgD
+                    aUp9rLSsUsxaR1CGnANAyZx95OEuDNm4XESc0LDTQbUSqQXFNSIJRX+96HDdP2B2
+                    iq+rWCMkOsnIFWn59yJVSVnXIyzqhIQ5SAfpMKPHONh/46OIpPzSgCdsZYhOlDJ5
+                    I1Hd5waVAumcw9dSIJPK5P8A4DiC4MNEw52ti4FD7pSD2U/zzMP5vpn2tcobUPDD
+                    GYlX9I5DyEn0beBPGWns13QifCdrPbFUzt634x/EAC1SvKoGV1iFrYsV1wcMf0rd
+                    yCkXLhrFf7brXBHwcPhLEFl2mlltK/iJtCaNlF6W61mYhuqtc9xQeGrALWFaY+Ki
+                    vxIHMQdTu7vZv8K59tHDSJxuq5LpZZ5TaxErsD3YU1nz2L3w5JCaA4iyFx4AOYT7
+                    VF0gktU3ziZxpxZzDiuxMQOH8gSvixPGLLVbQp6Pb/LZVkYhMCpEGLJ3peSoj6OH
+                    uWgF43Rb5840AyfpvwOZ6vsCAwEAAQ==\n
+                    -----END PUBLIC KEY-----"
+      Name:
+        Fn::Sub: "${EnvironmentPrefix}-CB-PublicKey"
+
+  ClearBankCredentialsResourcePolicy:
+    Type: "AWS::SecretsManager::ResourcePolicy"
+    Properties:
+      SecretId: !Ref ClearBankCredentialsSecret
+      ResourcePolicy: 
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS: !Ref NodeSecurityGroup
+          Action: secretsmanager:GetSecretValue
+          Resource: "*"  
+
+
+  ClearBankAuthTokenSecret:
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Description: Authentication token to call Clear Bank APIs 
+      SecretString: "MTkzY2RiNzk4NzY4NGYxMTgwZWQwMTNlODM0MjRlMWE=.eyJJbnN0aXR1dGlvbklkIjoiYjcyNzczNWUtOTQyYi00YTQ4LTg0YTktMGIzN2I1YjcxNWFiIiwiTmFtZSI6InFhLW1vbnVtZW50LWlsLXRva2VuIiwiVG9rZW4iOiI1OEIxNURBODI5NEY0NjA4QTE5RTFCNjNCQkRGNEY0QjAzQTg4NDE5RjFFMzRDRDhBQ0MyQUI1NTUxMDBEODI4MEUxM0QyMzU2QTYzNDg4NEJERjA0NEU3NTcxNTcyMzQifQ=="
+      Name: !Sub '${EnvironmentPrefix}-clearbank-auth-token'
+
+  ClearBankAuthTokenSecretResourcePolicy:
+    Type: "AWS::SecretsManager::ResourcePolicy"
+    Properties:
+      SecretId: !Ref ClearBankAuthTokenSecret
+      ResourcePolicy: 
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS: !Ref NodeSecurityGroup
+          Action: secretsmanager:GetSecretValue
+          Resource: "*" 
+
+
+  LogGroupMambuAuthorizer:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays:
+        Ref: NumDaysToRetainLambdaExecutionLogs
+      LogGroupName:
+        Fn::Sub: "/aws/lambda/${EnvironmentPrefix}-MambuAuthorizer"
+  ManagedPolicyLambdaBasicExecution:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Basic execution policy for all lambdas
+      ManagedPolicyName:
+        Fn::Sub: "${EnvironmentPrefix}-lambda-basic-execution-role"
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          Resource:
+            Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
+        - Effect: Allow
+          Action: logs:CreateLogGroup
+          Resource:
+            Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+  RoleForLambdaExecution:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: "${EnvironmentPrefix}-RoleForLambdaExecution"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+        - Effect: Allow
+          Principal:
+            Service: apigateway.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - Ref: ManagedPolicyLambdaBasicExecution
+      Policies:
+      - PolicyName:
+          Fn::Sub: "${EnvironmentPrefix}-MambuCredentialReadPolicy"
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource:
+              Ref: MambuCredentialsSecret
+  LambdaFunctionForMambuAuthorizer:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Lambda function to authenticate Mambu credentials
+      Environment:
+        Variables:
+          Credential_Key: !Ref MambuCredentialsSecret #This lambda will read the secret from this      
+      FunctionName:
+        Fn::Sub: "${EnvironmentPrefix}-MambuBasicAuthorizer"
+      Handler: index.handler
+      Code:
+        S3Bucket:
+          Ref: S3BucketNameContainingLambdaPackages
+        S3Key: MambuBasicAuthorizer.zip
+      MemorySize:
+        Ref: MemorySizeForLambda
+      Role:
+        Fn::GetAtt:
+        - RoleForLambdaExecution
+        - Arn
+      Runtime: nodejs12.x
+      Timeout: 3
+      TracingConfig:
+        Mode: PassThrough
+Outputs:
+  TransferFundsQueue:
+    Value:
+      Fn::GetAtt:
+      - TransferFundsQueue
+      - Arn
+    Description: Arn of the Transfer Funds Queue
+  AccountCreationQueue:
+    Value:
+      Fn::GetAtt:
+      - AccountCreationQueue
+      - Arn
+    Description: Arn of the account creation queue
+  AccountCreationAckQueue:
+    Value:
+      Fn::GetAtt:
+      - AccountCreationAckQueue
+      - Arn
+    Description: Arn of the AccountCreationAck queue
+  SFeventQueue:
+    Value:
+      Fn::GetAtt:
+      - SFeventQueue
+      - Arn
+    Description: Arn of the SFevent queue
+  PaymentAckQueue:
+    Value:
+      Fn::GetAtt:
+      - PaymentAckQueue
+      - Arn
+    Description: Arn of the PaymentAck queue
+  SFCredentialsSecret:
+    Value:
+      Ref: SFCredentialsSecret
+    Description: Secret key for Sf
+  MambuCredentialsSecret:
+    Value:
+      Ref: MambuCredentialsSecret
+  ClearBankCredentialsSecret:
+    Value:
+      Ref: ClearBankCredentialsSecret
+  LambdaFunctionForMambuAuthorizer:
+    Value:
+      Ref: LambdaFunctionForMambuAuthorizer
+    Description: Details of the Lambda function for Mambu authorizer.
+  PaymentTransferQueue:
+    Value: !GetAtt PaymentTransferQueue.Arn
+    Description: "Arn of the PaymentTransfer Queue"
+  CBInitiatePaymentQueue:
+    Value: !GetAtt CBInitiatePaymentQueue.Arn
+    Description: "Arn of the CBInitiatePayment Queue"  
+  ClearBankAuthTokenSecret:
+    Value: !Ref ClearBankAuthTokenSecret  
+  AccountUpdateQueue:
+    Value: !GetAtt AccountUpdateQueue.Arn             

@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template to create the cloudwatch event base for account creation.
+
+Resources:
+  LambdaBasicExecution:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AWSCloudFormationFullAccess'
+      Path: /
+
+  CWEventRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: 'Create Managed Account Event Handler'
+      EventPattern:
+        source:
+          - "aws.controltower"
+        detail-type:
+          - "AWS Service Event via CloudTrail"
+        detail:
+          eventName:
+            - "CreateManagedAccount"
+      State: 'ENABLED'
+      Targets:
+        - Id: Create_Managed_Account_Event_Handler
+          Arn:
+            Fn::GetAtt:
+              - "CreateStackFunction"
+              - "Arn"
+
+  CloudWatchEventFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - "CreateStackFunction"
+          - "Arn"
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - "CWEventRule"
+          - "Arn"
+
+  CreateStackFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          var AWS = require("aws-sdk");
+          var fs = require("fs");
+          let path = require("path");
+          var cloudformation = new AWS.CloudFormation();
+          var region = process.env.AWS_REGION;
+          const STACKSET_NAME = "Custom-ComtrolTower-Baseline-Stack";
+          exports.handler = async (event, context, callback) => {
+            try {
+              console.log(JSON.stringify(event));
+              var isStackExist = await stackExist();
+              if (!isStackExist) {
+                context.fail("Stack Set does not exist. Please create the baseline stackset.");
+              }
+              var accounts = [event.detail.serviceEventDetails.createManagedAccountStatus.account.accountId];
+              await createStackInstance(accounts);
+              context.succeed();
+            } catch (err) {
+              context.fail("Error Occured: " + err);
+            }
+          };
+          function createStackInstancePromise(accArr) {
+            return new Promise((resolve, reject) => {
+              var params = {
+                Regions: [region],
+                StackSetName: STACKSET_NAME,
+                DeploymentTargets: { Accounts: accArr },
+              };
+              cloudformation.createStackInstances(params, function(err, data) {
+                if (err) reject(err);
+                else resolve();
+              });
+            });
+          }
+          async function createStackInstance(accArr) {
+            try {
+              let http_promise = createStackInstancePromise(accArr);
+              let output = await http_promise;
+              return output;
+            } catch (error) {
+              console.log(error);
+              throw error;
+            }
+          }
+          function stackExistPromise() {
+            return new Promise((resolve, reject) => {
+              var params = { StackSetName: STACKSET_NAME };
+              cloudformation.describeStackSet(params, function(err, data) {
+                if (err) {
+                  if (err.statusCode) resolve(false);
+                  else reject(err);
+                } else {
+                  resolve(true);
+                }
+              });
+            });
+          }
+          async function stackExist() {
+            try {
+              let http_promise = stackExistPromise();
+              let output = await http_promise;
+              return output;
+            } catch (error) {
+              console.log(error);
+              throw error;
+            }
+          }
+      Handler: index.handler
+      MemorySize: 1024
+      Timeout: 60
+      Role: !GetAtt LambdaBasicExecution.Arn
+      Runtime: nodejs12.x

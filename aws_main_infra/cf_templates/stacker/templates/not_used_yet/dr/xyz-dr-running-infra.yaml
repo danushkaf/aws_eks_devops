@@ -1,0 +1,925 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Amazon EKS HP VPC NodeGroup
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: Dev
+    Description: Prefix for Env Name
+  VpcBlock:
+    Type: String
+    Default: 192.168.0.0/16
+    Description: >-
+      The CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR
+      range.
+  Subnet01Block:
+    Type: String
+    Default: 192.168.1.0/24
+    Description: CidrBlock for subnet 01 within the VPC
+  Subnet02Block:
+    Type: String
+    Default: 192.168.2.0/24
+    Description: CidrBlock for subnet 02 within the VPC
+  Subnet03Block:
+    Type: String
+    Default: 192.168.3.0/24
+    Description: CidrBlock for subnet 03 within the VPC
+  Subnet04Block:
+    Type: String
+    Default: 192.168.4.0/24
+    Description: CidrBlock for subnet 04 within the VPC
+  Subnet05Block:
+    Type: String
+    Default: 192.168.5.0/24
+    Description: CidrBlock for subnet 05 within the VPC
+  Subnet06Block:
+    Type: String
+    Default: 192.168.6.0/24
+    Description: CidrBlock for subnet 06 within the VPC
+  DBAutoScalingGroupMaxSize:
+    Type: Number
+    Default: 4
+    Description: Maximum size of DB Group ASG.
+  DBAutoScalingGroupMinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum size of DB Group ASG.
+  DatabaseUsername:
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 1 to 16 alphanumeric characters.
+    Description: The database admin account user name, between 1 to 16 alphanumeric characters.
+    MaxLength: '16'
+    MinLength: '1'
+    Type: String
+  DatabasePassword:
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+    Description: The database admin account password, between 8 to 41 alphanumeric characters.
+    MaxLength: '41'
+    MinLength: '8'
+    NoEcho: 'true'
+    Type: String
+  DatabaseName:
+    AllowedPattern: "[a-zA-Z0-9-_]+"
+    ConstraintDescription: must be between 4 to 30 alphanumeric characters.
+    Description: The database admin account user name, between 4 to 30 alphanumeric characters.
+    MaxLength: '30'
+    MinLength: '4'
+    Type: String
+  InstanceType:
+    Type: String
+    Default: db.t2.small
+    Description: Enter db Instance types.
+  DBClusterIdentifier:
+    Type: String
+    Description: Database Cluster Name
+  DatabaseReplication:
+    Type: String
+    AllowedValues:
+      - 'Required'
+      - 'Not Required'
+    Default: Not Required
+    Description: Do this deployment need Database Replication or Not
+  FluentdSharedLogRoleARN:
+    Type: String
+    Description: ARN of the role created to access CW logs for Fluentd
+  Route53SharedRoleARN:
+    Type: String
+    Description: ARN of the role created to access Route53
+  SourceDBClusterArn:
+    Type: String
+    Description: DB Cluster Arn to replicate
+  SourceRegion:
+    Type: String
+    Description: Region of the source
+    Default: us-east-1
+  DBKmsKey:
+    Type: String
+    Description: Select Encryption Key for DB Replication
+    Default: arn:aws:kms:us-east-1:927718720457:key/1f885ce5-756e-442e-8d44-37ca13172e1b
+
+Conditions:
+  DBReplicationRequired: !Equals
+    - !Ref DatabaseReplication
+    - 'Required'
+
+  DBKmsKeyNotSpecified: !Equals [ !Ref DBKmsKey, "" ] 
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Worker Network & Node Configuration
+        Parameters:
+          - EnvironmentPrefix
+          - VpcBlock
+          - Subnet01Block
+          - Subnet02Block
+          - Subnet03Block
+          - Subnet04Block
+          - Subnet05Block
+          - Subnet06Block
+          - DatabaseUsername
+          - DatabasePassword
+          - DatabaseName
+          - InstanceType
+          - DBClusterIdentifier
+          - DatabaseReplication
+          - DBAutoScalingGroupMinSize
+          - DBAutoScalingGroupMaxSize
+          - FluentdSharedLogRoleARN
+          - Route53SharedRoleARN
+          - SourceDBClusterArn
+          - SourceRegion
+          - DBKmsKey
+
+Resources:
+  AWSServiceRoleForAmazonEKS:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${EnvironmentPrefix}-IAM-EKS'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - eks.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+        - arn:aws:iam::aws:policy/AmazonRoute53FullAccess
+
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VpcBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-${AWS::StackName}-VPC'
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-IG'
+
+  NatGateway1EIP:
+    Type: 'AWS::EC2::EIP'
+    DependsOn: VPCGatewayAttachment
+
+  NatGateway1:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-NG'
+      AllocationId: !GetAtt
+        - NatGateway1EIP
+        - AllocationId
+      SubnetId: !Ref Subnet01
+
+  VPCGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  RouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Public-RT'
+        - Key: Network
+          Value: Public
+
+  RouteTablePrivate:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Private-RT'
+        - Key: Network
+          Value: Private
+
+  Route:
+    DependsOn: VPCGatewayAttachment
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  RoutePrivate:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref RouteTablePrivate
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  Subnet01:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 01
+    Properties:
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet01Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Pub-Subnet01'
+        - Key: kubernetes.io/role/elb
+          Value: "1"
+
+  Subnet02:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 02
+    Properties:
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet02Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Public-Subnet02'
+        - Key: kubernetes.io/role/elb
+          Value: "1"
+
+  Subnet03:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 03
+    Properties:
+      AvailabilityZone: !Select
+        - '2'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet03Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Public-Subnet03'
+        - Key: kubernetes.io/role/elb
+          Value: "1"
+
+  Subnet04:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 04
+    Properties:
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet04Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Private-Subnet04'
+        - Key: kubernetes.io/role/internal-elb
+          Value: "1"
+
+  Subnet05:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 05
+    Properties:
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet05Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Private-Subnet05'
+        - Key: kubernetes.io/role/internal-elb
+          Value: "1"
+
+  Subnet06:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 06
+    Properties:
+      AvailabilityZone: !Select
+        - '2'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet06Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Private-Subnet06'
+        - Key: kubernetes.io/role/internal-elb
+          Value: "1"
+
+  Subnet01RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet01
+      RouteTableId: !Ref RouteTable
+
+  Subnet02RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet02
+      RouteTableId: !Ref RouteTable
+
+  Subnet03RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet03
+      RouteTableId: !Ref RouteTable
+
+  Subnet04RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet04
+      RouteTableId: !Ref RouteTablePrivate
+
+  Subnet05RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet05
+      RouteTableId: !Ref RouteTablePrivate
+
+  Subnet06RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet06
+      RouteTableId: !Ref RouteTablePrivate
+
+  ControlPlaneSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Cluster communication with worker nodes
+      VpcId: !Ref VPC
+
+  NodeInstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+        - "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+        - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+        - "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+        - "arn:aws:iam::aws:policy/AmazonRoute53FullAccess"
+        - "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+        - "arn:aws:iam::aws:policy/AmazonAPIGatewayAdministrator"
+        - "arn:aws:iam::aws:policy/AWSWAFFullAccess"
+        - "arn:aws:iam::aws:policy/AWSCloudFormationFullAccess"
+      Path: /
+
+  NodeInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: /
+      Roles:
+        - Ref: NodeInstanceRole
+
+  NodeSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Security group for all nodes in the cluster
+      VpcId: !Ref VPC
+
+  NodeSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow node to communicate with each other
+      FromPort: 0
+      GroupId: !Ref NodeSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      ToPort: 65535
+
+  ClusterControlPlaneSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow pods to communicate with the cluster API Server
+      FromPort: 443
+      GroupId: !Ref ControlPlaneSecurityGroup
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      ToPort: 443
+
+  ControlPlaneEgressToNodeSecurityGroup:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow the cluster control plane to communicate with worker Kubelet and pods
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      FromPort: 1025
+      GroupId: !Ref ControlPlaneSecurityGroup
+      IpProtocol: tcp
+      ToPort: 65535
+
+  ControlPlaneEgressToNodeSecurityGroupOn443:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow the cluster control plane to communicate with pods running extension API servers on port 443
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      FromPort: 443
+      GroupId: !Ref ControlPlaneSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+
+  NodeSecurityGroupFromControlPlaneIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow worker Kubelets and pods to receive communication from the cluster control plane
+      FromPort: 1025
+      GroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref ControlPlaneSecurityGroup
+      ToPort: 65535
+
+  NodeSecurityGroupFromControlPlaneOn443Ingress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow pods running extension API servers on port 443 to receive communication from cluster control plane
+      FromPort: 443
+      GroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref ControlPlaneSecurityGroup
+      ToPort: 443
+
+  APIGWIngControllerPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "APIGWIngControllerPolicy"
+      Roles:
+        - Ref: NodeInstanceRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "iam:GetRole"
+          - "iam:GetPolicy"
+          - "iam:UpdateUser"
+          - "iam:CreateRole"
+          - "iam:DeleteRole"
+          - "sts:*"
+          - "iam:AttachRolePolicy"
+          - "iam:DeleteUser"
+          - "iam:PutRolePolicy"
+          - "iam:CreateUser"
+          - "iam:PassRole"
+          - "iam:DetachRolePolicy"
+          - "iam:DeleteRolePolicy"
+          - "iam:UpdateRole"
+          - "iam:GetUser"
+          - "ec2:*"
+          - "autoscaling:*"
+          Resource: "*"
+
+  ALBIngControllerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: NodeInstanceRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - acm:DescribeCertificate
+          - acm:ListCertificates
+          - acm:GetCertificate
+          Resource: "*"
+        - Effect: Allow
+          Action:
+          - ec2:AuthorizeSecurityGroupIngress
+          - ec2:CreateSecurityGroup
+          - ec2:CreateTags
+          - ec2:DeleteTags
+          - ec2:DeleteSecurityGroup
+          - ec2:DescribeAccountAttributes
+          - ec2:DescribeAddresses
+          - ec2:DescribeInstances
+          - ec2:DescribeInstanceStatus
+          - ec2:DescribeInternetGateways
+          - ec2:DescribeNetworkInterfaces
+          - ec2:DescribeSecurityGroups
+          - ec2:DescribeSubnets
+          - ec2:DescribeTags
+          - ec2:DescribeVpcs
+          - ec2:ModifyInstanceAttribute
+          - ec2:ModifyNetworkInterfaceAttribute
+          - ec2:RevokeSecurityGroupIngress
+          Resource: "*"
+        - Effect: Allow
+          Action:
+          - elasticloadbalancing:AddListenerCertificates
+          - elasticloadbalancing:AddTags
+          - elasticloadbalancing:CreateListener
+          - elasticloadbalancing:CreateLoadBalancer
+          - elasticloadbalancing:CreateRule
+          - elasticloadbalancing:CreateTargetGroup
+          - elasticloadbalancing:DeleteListener
+          - elasticloadbalancing:DeleteLoadBalancer
+          - elasticloadbalancing:DeleteRule
+          - elasticloadbalancing:DeleteTargetGroup
+          - elasticloadbalancing:DeregisterTargets
+          - elasticloadbalancing:DescribeListenerCertificates
+          - elasticloadbalancing:DescribeListeners
+          - elasticloadbalancing:DescribeLoadBalancers
+          - elasticloadbalancing:DescribeLoadBalancerAttributes
+          - elasticloadbalancing:DescribeRules
+          - elasticloadbalancing:DescribeSSLPolicies
+          - elasticloadbalancing:DescribeTags
+          - elasticloadbalancing:DescribeTargetGroups
+          - elasticloadbalancing:DescribeTargetGroupAttributes
+          - elasticloadbalancing:DescribeTargetHealth
+          - elasticloadbalancing:ModifyListener
+          - elasticloadbalancing:ModifyLoadBalancerAttributes
+          - elasticloadbalancing:ModifyRule
+          - elasticloadbalancing:ModifyTargetGroup
+          - elasticloadbalancing:ModifyTargetGroupAttributes
+          - elasticloadbalancing:RegisterTargets
+          - elasticloadbalancing:RemoveListenerCertificates
+          - elasticloadbalancing:RemoveTags
+          - elasticloadbalancing:SetIpAddressType
+          - elasticloadbalancing:SetSecurityGroups
+          - elasticloadbalancing:SetSubnets
+          - elasticloadbalancing:SetWebACL
+          Resource: "*"
+        - Effect: Allow
+          Action:
+          - iam:CreateServiceLinkedRole
+          - iam:GetServerCertificate
+          - iam:ListServerCertificates
+          Resource: "*"
+        - Effect: Allow
+          Action:
+          - waf-regional:GetWebACLForResource
+          - waf-regional:GetWebACL
+          - waf-regional:AssociateWebACL
+          - waf-regional:DisassociateWebACL
+          Resource: "*"
+        - Effect: Allow
+          Action:
+          - tag:GetResources
+          - tag:TagResources
+          Resource: "*"
+        - Effect: Allow
+          Action:
+          - waf:GetWebACL
+          Resource: "*"
+
+  LogsPolicyForWorker:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "LogsPolicyForWorker"
+      Roles:
+        - Ref: NodeInstanceRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "logs:DescribeLogGroups"
+          - "logs:DescribeLogStreams"
+          - "logs:CreateLogGroup"
+          - "logs:CreateLogStream"
+          - "logs:PutLogEvents"
+          Resource: "*"
+
+  ASGPolicyForWorker:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "ASGPolicyForWorker"
+      Roles:
+        - Ref: NodeInstanceRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "autoscaling:DescribeAutoScalingGroups"
+          - "autoscaling:DescribeAutoScalingInstances"
+          - "autoscaling:SetDesiredCapacity"
+          - "autoscaling:TerminateInstanceInAutoScalingGroup"
+          - "autoscaling:DescribeTags"
+          Resource: "*"
+
+  FluentdSTSPolicyForWorker:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "FluentdSTSPolicyForWorker"
+      Roles:
+        - Ref: NodeInstanceRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "sts:*"
+          Resource: !Ref FluentdSharedLogRoleARN
+
+  Route53STSPolicyForWorker:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "Route53STSPolicyForWorker"
+      Roles:
+        - Ref: NodeInstanceRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "sts:*"
+          Resource: !Ref Route53SharedRoleARN
+
+  ADBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Security group for db
+      VpcId: !Ref VPC
+
+  ADBSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: ADBSecurityGroup
+    Properties:
+      Description: Allow Kube nodes to communicate with the DB
+      FromPort: 3306
+      GroupId: !Ref ADBSecurityGroup
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      ToPort: 3306
+
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: CloudFormation managed DB subnet group.
+      SubnetIds:
+        - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+
+  RDSDBInstanceParameterGroup:
+    Type: "AWS::RDS::DBParameterGroup"
+    Properties:
+      Description: "The-xyz Instance Parameter Group"
+      Family: aurora5.6
+      Parameters:
+        max_connections: "16000"
+
+  RDSDBClusterParameterGroup:
+    Type: "AWS::RDS::DBClusterParameterGroup"
+    Properties:
+      Description: "The-xyz Cluster Parameter Group"
+      Family: aurora5.6
+      Parameters:
+        max_connections: 16000
+        binlog_format: STATEMENT
+
+  KeyForDBCluster:
+    Type: "AWS::KMS::Key"
+    Condition: DBKmsKeyNotSpecified
+    Properties:
+      Description: For replica RDS in DR region 
+      Enabled: true
+      EnableKeyRotation: true
+      KeyPolicy:
+        Statement:
+          - 
+            Effect: Allow
+            Principal:
+              Service: rds.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt              
+              - kms:GenerateDataKey*
+            Resource: "*"
+          - 
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt NodeInstanceRole.Arn
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"            
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+            Resource: "*"      
+      KeyUsage: ENCRYPT_DECRYPT
+      PendingWindowInDays: 7
+          
+
+  AliasForKeyForDBCluster:
+    Type: "AWS::KMS::Alias"
+    Condition: DBKmsKeyNotSpecified    
+    Properties:
+      AliasName: alias/key-rds-cluster-replica
+      TargetKeyId: !Ref KeyForDBCluster
+  
+
+  DRDatabaseCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      Engine: aurora
+      DBClusterParameterGroupName: !Ref "RDSDBClusterParameterGroup"
+      BackupRetentionPeriod: 7
+      StorageEncrypted: True
+      KmsKeyId: !If [ DBKmsKeyNotSpecified, !GetAtt KeyForDBCluster.Arn ,  !Ref DBKmsKey ] 
+      PreferredBackupWindow: 01:00-02:00
+      PreferredMaintenanceWindow: mon:03:00-mon:04:00
+      ReplicationSourceIdentifier: !Ref SourceDBClusterArn
+      SourceRegion: !Ref SourceRegion
+      DBSubnetGroupName: !Ref "DatabaseSubnetGroup"
+      DBClusterIdentifier: !Ref "DBClusterIdentifier"
+      VpcSecurityGroupIds:
+         -
+            !Ref "ADBSecurityGroup"
+      Tags:
+         -
+            Key: "Cluster Name"
+            Value: !Ref "DBClusterIdentifier"
+
+  DRDatabasePrimaryInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: aurora
+      DBClusterIdentifier: !Ref "DRDatabaseCluster"
+      DBInstanceClass: !Ref "InstanceType"
+      DBSubnetGroupName: !Ref "DatabaseSubnetGroup"
+      DBParameterGroupName: !Ref "RDSDBInstanceParameterGroup"
+      Tags:
+         -
+            Key: "Cluster Name"
+            Value: !Ref "DBClusterIdentifier"
+
+  DRAutoScalerTarget:
+    Condition: DBReplicationRequired
+    DependsOn: DRDatabaseCluster
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MinCapacity: !Ref DBAutoScalingGroupMinSize
+      MaxCapacity: !Ref DBAutoScalingGroupMaxSize
+      ResourceId: !Sub "cluster:${DBClusterIdentifier}"
+      ScalableDimension: rds:cluster:ReadReplicaCount
+      ServiceNamespace: rds
+      RoleARN: !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/rds.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_RDSCluster"
+
+  DRAutoScaler:
+    Condition: DBReplicationRequired
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      ScalingTargetId: !Ref "DRAutoScalerTarget"
+      PolicyName: xyz
+      PolicyType: TargetTrackingScaling
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: RDSReaderAverageCPUUtilization
+        TargetValue: 80.0
+        ScaleOutCooldown: 300
+        ScaleInCooldown: 300
+        DisableScaleIn: False
+
+  DRDBSecret:
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Description: RDS Secret
+      Name: !Sub '${EnvironmentPrefix}-DB-Password'
+      SecretString: !Sub '{"username":"${DatabaseUsername}","password":"${DatabasePassword}","dbname":"${DatabaseName}"}'
+
+  SecretRDSAttachment:
+    Type: "AWS::SecretsManager::SecretTargetAttachment"
+    Properties:
+      SecretId: !Ref DRDBSecret
+      TargetId: !Ref DRDatabaseCluster
+      TargetType: AWS::RDS::DBCluster
+
+Outputs:
+  SubnetIds:
+    Description: All subnets in the VPC
+    Value: !Join
+      - ','
+      - - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-SubnetIds"
+
+  SecurityGroups:
+    Description: >-
+      Security group for the cluster control plane communication with worker
+      nodes
+    Value: !Join
+      - ','
+      - - !Ref ControlPlaneSecurityGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-SecurityGroups"
+
+  VpcId:
+    Description: The VPC Id
+    Value: !Ref VPC
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-VpcId"
+
+  AllSubnetIds:
+    Description: All subnets in the VPC
+    Value: !Join
+      - ','
+      - - !Ref Subnet01
+        - !Ref Subnet02
+        - !Ref Subnet03
+        - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-AllSubnetIds"
+
+  RoleArn:
+    Description: The role that EKS will use to create AWS resources for Kubernetes clusters
+    Value: !GetAtt AWSServiceRoleForAmazonEKS.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-RoleArn"
+
+  NodeInstanceRole:
+    Description: The node instance role
+    Value: !GetAtt NodeInstanceRole.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-NodeInstanceRole"
+
+  NodeInstanceProfile:
+    Description: The node instance profile
+    Value: !Ref NodeInstanceProfile
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-NodeInstanceProfile"
+
+  AWSServiceRoleForAmazonEKS:
+    Description: The EKS service role
+    Value: !GetAtt AWSServiceRoleForAmazonEKS.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-AWSServiceRoleForAmazonEKS"
+
+  NodeSecurityGroup:
+    Description: The security group for the node group
+    Value: !Ref NodeSecurityGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-NodeSecurityGroup"
+
+  DBPasswordSecretOutput:
+    Description: DB Password Secret Arn
+    Value: !Ref DRDBSecret
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-DBPasswordSecret"

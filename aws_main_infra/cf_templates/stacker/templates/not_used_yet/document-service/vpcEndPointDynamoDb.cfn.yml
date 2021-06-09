@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS resources for the VOC endpoint for dynamo db.
+Parameters:
+  EnvironmentPrefix:
+    Type: String 
+    AllowedValues:
+      - dev
+      - qa
+      - uat
+      - prod
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Specify the Vpc Id. based on the environment, specify the correct vpc id.
+  RouteTableIds:
+    Type: CommaDelimitedList
+    Description: Specify the list of routeTableIds (comma separated) to which the vpc endpoint should be associated with. There are two routes , one for private subnets , other for public subnets
+
+Resources:
+
+  DynamoDBVpcEndPoint:
+    Type: "AWS::EC2::VPCEndpoint"
+    Properties:
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal: "*"
+          Action: dynamodb:*
+          Resource: "*"
+      RouteTableIds: !Ref RouteTableIds
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.dynamodb"
+      VpcEndpointType: Gateway
+      VpcId: !Ref VpcId
+
+Outputs:
+  DynamoDBVpcEndPoint:
+    Value: !Ref DynamoDBVpcEndPoint
+    Description: Id of the vpc end point created.

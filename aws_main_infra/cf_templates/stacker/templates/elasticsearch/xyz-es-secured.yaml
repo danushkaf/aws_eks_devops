@@ -1,0 +1,191 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Provision Secured Elasticsearch instance
+Parameters:
+  EsDomainName:
+    Type: String
+    Default: 'application-logs'
+    Description: EsDomainName
+  VPCID:
+    Type: String
+    Description: VPC ID
+  PrivateSubnets:
+    Type: CommaDelimitedList
+    Description: Private Subnet ID List
+  BastionSG:
+    Type: String
+    Description: Bastion SG ID
+  EsInstanceCount:
+    Type: Number
+    Default: 2
+    Description: EsInstanceCount
+  EsAvailZoneCount:
+    Type: Number
+    Default: 2
+    Description: EsAvailZoneCount
+  EBSSize:
+    Type: Number
+    Default: 30
+    Description: EBSSize
+  DataInstanceType:
+    Type: String
+    Default: 'm5.large.elasticsearch'
+    Description: DataInstanceType
+  IsDedicatedMasterEnabled:
+    Type: String
+    Default: 'Disabled'
+    AllowedValues:
+      - Enabled
+      - Disabled
+    Description: Whether Dedicated Master Feature is enabled
+  MasterInstanceType:
+    Type: String
+    Default: 'c5.2xlarge.elasticsearch'
+    Description: MasterInstanceType
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Configurations
+        Parameters:
+          - EsDomainName
+          - EBSSize
+          - EsInstanceCount
+          - EsAvailZoneCount
+          - IsDedicatedMasterEnabled
+          - DataInstanceType
+          - MasterInstanceType
+Conditions:
+  HasDedicatedMasterEnabled: !Equals [!Ref IsDedicatedMasterEnabled, 'enabled']
+Resources:
+
+  ESSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EsDomainName}-SG'
+      GroupDescription: Security group for Elasticsearch
+      VpcId: !Ref VPCID
+
+  ESSecurityGroupSelfIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description: Allow node to communicate with each other
+      FromPort: 0
+      GroupId: !Ref ESSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref ESSecurityGroup
+      ToPort: 65535
+
+  ESSecurityGroupBastionIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description: Allow node to communicate with each other
+      FromPort: 0
+      GroupId: !Ref ESSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref BastionSG
+      ToPort: 65535
+
+  LambdaBasicExecution:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+      Path: /
+
+  VPCElasticsearchDomain:
+    Type: 'AWS::Elasticsearch::Domain'
+    Properties:
+      DomainName: !Ref EsDomainName
+      ElasticsearchVersion: 7.10
+      ElasticsearchClusterConfig:
+        DedicatedMasterEnabled: !If
+          - HasDedicatedMasterEnabled
+          - true
+          - false
+        DedicatedMasterType: !If
+          - HasDedicatedMasterEnabled
+          - !Ref MasterInstanceType
+          - !Ref AWS::NoValue
+        InstanceCount: !Ref EsInstanceCount
+        ZoneAwarenessEnabled: 'true'
+        ZoneAwarenessConfig:
+          AvailabilityZoneCount: !Ref EsAvailZoneCount
+        InstanceType: !Ref DataInstanceType
+      EBSOptions:
+        EBSEnabled: true
+        VolumeSize: !Ref EBSSize
+        VolumeType: standard
+      EncryptionAtRestOptions:
+        Enabled: true
+      NodeToNodeEncryptionOptions:
+        Enabled: true
+      SnapshotOptions:
+        AutomatedSnapshotStartHour: '0'
+      VPCOptions:
+        SubnetIds: !Ref PrivateSubnets
+        SecurityGroupIds:
+          - !Ref ESSecurityGroup
+      AccessPolicies:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: 'es:*'
+            Resource: !Sub 'arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${EsDomainName}/*'
+
+  LambdaKey:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: !Sub "This is customer managed CMK for Lamda Envs at rest encrytion."
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:*"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+Outputs:
+  DomainArn:
+    Value: !GetAtt VPCElasticsearchDomain.DomainArn
+  LambdaKey:
+    Value: !GetAtt LambdaKey.Arn
+  DomainEndpoint:
+    Value: !GetAtt VPCElasticsearchDomain.DomainEndpoint
+  LambdaBasicExecutionRole:
+    Description: The lambda execution role
+    Value: !GetAtt LambdaBasicExecution.Arn
+  LambdaBasicExecutionRoleName:
+    Description: The lambda execution role Name
+    Value: !Ref LambdaBasicExecution
+  ESSecurityGroup:
+    Description: Elastic Search Security Group Id
+    Value: !Ref ESSecurityGroup

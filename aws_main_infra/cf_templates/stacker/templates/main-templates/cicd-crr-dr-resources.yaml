@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: RDS CRR Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  CRRLambdaExecutionRoleArn:
+    Type: String
+    Description: Custom Resource Lambda Execution Role Arn.
+  RDSClusterIdentifier:
+    Type: String
+    Description: RDS Cluster Name
+  LambdaS3BucketName:
+    Type: String
+    Description: Lambda Code zip file S3 bucket name
+  CRRLambdaFileName:
+    Type: String
+    Description: RDS Config Lambda Code zip filename in S3
+  SnapshotCRRCron:
+    Type: String
+    Description: Cron for snapshot delete schedule
+  SnapshotRetentionInDays:
+    Type: Number
+    Description: Snapshot Retention In Days for DR
+  DRRegion:
+    Description: DR Region ID.
+    Type: String
+
+Resources:
+
+  LambdaKey:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: !Sub "This is customer managed CMK for Lamda Envs at rest encrytion."
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:*"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+  SnapshotCRRLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentPrefix}-rds-snapshot-dr-clean-lambda-func'
+      Runtime: python3.7
+      Role: !Ref CRRLambdaExecutionRoleArn
+      Handler: index.handler
+      MemorySize: 1024
+      Timeout: 900
+      KmsKeyArn: !GetAtt LambdaKey.Arn
+      Environment:
+        Variables:
+          cluster_id: !Ref RDSClusterIdentifier
+          retention_days: !Ref SnapshotRetentionInDays
+          dr_region: !Ref DRRegion
+      Code:
+        S3Bucket: !Ref LambdaS3BucketName
+        S3Key: !Ref CRRLambdaFileName
+      Description: Lambda to crr rds snapshots
+
+  CloudWatchSubscriptionFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - "SnapshotCRRLambdaFunction"
+          - "Arn"
+      Action: 'lambda:InvokeFunction'
+      Principal: 'events.amazonaws.com'
+      SourceArn:
+        Fn::GetAtt:
+          - "CloudWatchCRRRule"
+          - "Arn"
+
+  CloudWatchCRRRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: 'CRR RDS Cluster Snapshot'
+      ScheduleExpression: !Ref SnapshotCRRCron
+      State: 'ENABLED'
+      Targets:
+        - Id: 'CRR-RDS-Snapshots'
+          Arn:
+            Fn::GetAtt:
+              - "SnapshotCRRLambdaFunction"
+              - "Arn"

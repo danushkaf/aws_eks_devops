@@ -1,0 +1,37 @@
+# this is an minimal `stack config` file.
+# http://stacker.readthedocs.io/en/latest/config.html
+#
+# The stacker namespace, provided by the environment file.
+# http://stacker.readthedocs.io/en/latest/config.html#namespace-delimiter
+namespace: ${namespace}
+
+# The bucket where stacker stores generated CloudFormation templates.
+# http://stacker.readthedocs.io/en/latest/config.html#s3-bucket
+stacker_bucket: ${stacker_bucket}
+
+# This sets the syspath to include the local path, which allows access to the
+# blueprints in the blueprints directory.
+# http://stacker.readthedocs.io/en/latest/config.html#module-paths
+sys_path: .
+
+# The stacks key accepts a list of stack declarations.
+# http://stacker.readthedocs.io/en/latest/config.html#stacks
+# variables which have default values need not be specified here. if specified, values speciifed here will
+# override the values in CF template
+stacks:
+
+  - name: ${stack_name}
+    template_path: ${template_path}/templates/enhanced-security/xyz-enhanced-security.yaml
+    region: ${region}
+    profile: ${aws_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      AssessmentSchedule: ${enhanced_security_schedule_cron}
+      TrustesAccountIDList: ${enhanced_security_trusted_accounts}
+
+  - name: ${ssm_stack_name}
+    template_path: ${template_path}/templates/enhanced-security/xyz-ssm-maintanance.yaml
+    region: ${region}
+    profile: ${aws_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}

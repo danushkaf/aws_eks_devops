@@ -1,0 +1,548 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS resources for the Notification service.
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    AllowedValues:
+      - dev
+      - qa
+      - uat
+      - prod
+  S3SSEAlgorithm:
+    Default: "AES256"
+    Type: String
+    Description: The Encryption algo to be used for S3 bucket
+  VisibilityTimeOut:
+    Default: 30
+    Type: Number
+    Description: The visibility timeout in seconds for all the queues.
+  MessageRetentionPeriodInSeconds:
+    Default: 345600
+    Type: Number
+    Description: The message retention period in seconds.
+  CacheNodeType:
+    Default:  "cache.t3.small"
+    Type: String
+    Description: Mention what node type to use for the cache
+  VpcId:      #this VPC ID should be same as that created by the main template, ideally the main template should output it, and pass it here
+    Type: AWS::EC2::VPC::Id
+  SubnetIdsForRedisCluster:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Specify the subnets which should be considered where the redis cluster can place the nodes in
+  CustomDomain:
+    Type: String
+    Default: notificationresources.www.xyz.co
+    Description: Custom base Domain for the cloudfront distribution for the templates. The environment will be prefixed to this base domain.
+  PriceClass:
+    Type: String
+    Default: PriceClass_100
+    AllowedValues:
+      - PriceClass_100
+      - PriceClass_200
+      - PriceClass_All
+    Description: Price Class for the Distribution
+  CertificateArn:
+    Type: String
+    Default: "arn:aws:acm:us-east-1:213074200201:certificate/2111f992-8497-4a4c-9739-d6791f98fbf9"
+    Description: Arn of an validated ACM certificate that should be used for the cloudfront distribution
+  MaxReceiveCount:
+    Default: 4
+    Type: Number
+    Description: The max receive count means how many times the SQS queue will retry
+      delivering msg before sending it in Dead letter queue.
+  EnableLogs:
+    Type: String
+    Default: 'Disabled'
+    Description: Indicate if access to cloudfront distribution should be logged
+    AllowedValues:
+      - Enabled
+      - Disabled
+  NodeSecurityGroup:
+    Type: String
+    Default: arn:aws:iam::213074200201:role/xyz-qa-infra-london-region-NodeInstanceRole-V9VAFTB8TWYV
+    Description: Input the ARN of the node security group of nodes in EKS cluster for this environment
+
+Conditions:
+  IsEnableLogs: !Equals [!Ref EnableLogs, 'Enabled']
+  HasCustomDomain: !Not [!Equals [!Ref CustomDomain, '']]
+  HasCertificateArn: !Not [!Equals [!Ref CertificateArn, '']]
+  HasCustomDomainEnabled: !And [Condition: HasCustomDomain, Condition: HasCertificateArn ]
+
+Resources:
+  #To allow Amazon SNS to send messages to encrypted Amazon SQS queues,
+  #the customer master key (CMK) associated with the Amazon SQS queue must have a policy statement that grants Amazon SNS
+  #service-principal access to the AWS KMS API actions GenerateDataKey and Decrypt.
+  #Because AWS managed CMKs don't support policy modifications, you must use a custom CMK.
+  CMKForSNSAndSQS:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: !Sub "This is ${EnvironmentPrefix} environment customer managed CMK for SQS and SNS."
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+            Resource: "*"
+          -
+            Effect: Allow
+            Principal:
+              AWS: !Ref NodeSecurityGroup
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+  CMKForSNSAndSQSAlias:
+    Type: "AWS::KMS::Alias"
+    Properties:
+      AliasName: !Sub "alias/${EnvironmentPrefix}-key-for-sns-sqs"
+      TargetKeyId: !Ref CMKForSNSAndSQS
+
+
+  DLQSQSQueueForGeneralNotificationEvents:
+    Type: AWS::SQS::Queue
+    Properties:
+      #ContentBasedDeduplication: false applicable only for FIFO
+      DelaySeconds: 0 #make paramterized
+      #FifoQueue: false
+      KmsMasterKeyId: !Ref CMKForSNSAndSQS
+      MaximumMessageSize: 262144  #make parmaterized
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds  #make parmaterized
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-notification-event-queue'
+      ReceiveMessageWaitTimeSeconds: 0  #make parmaterized
+      VisibilityTimeout: !Ref VisibilityTimeOut #make parmaterized
+
+
+  SQSQueueForGeneralNotificationEvents:
+    Type: AWS::SQS::Queue
+    Properties:
+      #ContentBasedDeduplication: false applicable only for FIFO
+      DelaySeconds: 0 #make paramterized
+      #FifoQueue: false
+      KmsMasterKeyId: !Ref CMKForSNSAndSQS
+      MaximumMessageSize: 262144  #make parmaterized
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds  #make parmaterized
+      QueueName: !Sub '${EnvironmentPrefix}-notification-event-queue'
+      ReceiveMessageWaitTimeSeconds: 0  #make parmaterized
+      VisibilityTimeout: !Ref VisibilityTimeOut #make parmaterized
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DLQSQSQueueForGeneralNotificationEvents.Arn
+        maxReceiveCount: !Ref MaxReceiveCount
+
+  DLQSQSQueueForEmail:
+    Type: AWS::SQS::Queue
+    Properties:
+      #ContentBasedDeduplication: false
+      DelaySeconds: 0
+      #FifoQueue: false
+      KmsMasterKeyId:  !Ref CMKForSNSAndSQS
+      MaximumMessageSize: 262144
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      QueueName: !Sub '${EnvironmentPrefix}-dlq-email-notification-queue'
+      ReceiveMessageWaitTimeSeconds: 0
+      VisibilityTimeout: !Ref VisibilityTimeOut
+
+
+  SQSQueueForEmail:
+    Type: AWS::SQS::Queue
+    Properties:
+      #ContentBasedDeduplication: false
+      DelaySeconds: 0
+      #FifoQueue: false
+      KmsMasterKeyId:  !Ref CMKForSNSAndSQS
+      MaximumMessageSize: 262144
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      QueueName: !Sub '${EnvironmentPrefix}-email-notification-queue'
+      ReceiveMessageWaitTimeSeconds: 0
+      VisibilityTimeout: !Ref VisibilityTimeOut
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DLQSQSQueueForEmail.Arn
+        maxReceiveCount: !Ref MaxReceiveCount
+
+
+  DLQSQSQueueForPushNotification:
+    Type: AWS::SQS::Queue
+    Properties:
+      #ContentBasedDeduplication: false
+      DelaySeconds: 0
+      #FifoQueue: false
+      KmsMasterKeyId:  !Ref CMKForSNSAndSQS
+      MaximumMessageSize: 262144
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      QueueName: !Sub "${EnvironmentPrefix}-dlq-push-notification-queue"
+      ReceiveMessageWaitTimeSeconds: 0
+      VisibilityTimeout: !Ref VisibilityTimeOut
+
+
+  SQSQueueForPushNotification:
+    Type: AWS::SQS::Queue
+    Properties:
+      #ContentBasedDeduplication: false
+      DelaySeconds: 0
+      #FifoQueue: false
+      KmsMasterKeyId:  !Ref CMKForSNSAndSQS
+      MaximumMessageSize: 262144
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      QueueName: !Sub "${EnvironmentPrefix}-push-notification-queue"
+      ReceiveMessageWaitTimeSeconds: 0
+      VisibilityTimeout: !Ref VisibilityTimeOut
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DLQSQSQueueForPushNotification.Arn
+        maxReceiveCount: !Ref MaxReceiveCount
+
+  DLQSQSQueueForSMSNotification:
+    Type: AWS::SQS::Queue
+    Properties:
+      #ContentBasedDeduplication: false
+      DelaySeconds: 0
+      #FifoQueue: false
+      KmsMasterKeyId:  !Ref CMKForSNSAndSQS
+      MaximumMessageSize: 262144
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      QueueName: !Sub "${EnvironmentPrefix}-dlq-sms-notification-queue"
+      ReceiveMessageWaitTimeSeconds: 0
+      VisibilityTimeout: !Ref VisibilityTimeOut
+
+
+  SQSQueueForSMSNotification:
+    Type: AWS::SQS::Queue
+    Properties:
+      #ContentBasedDeduplication: false
+      DelaySeconds: 0
+      #FifoQueue: false
+      KmsMasterKeyId:  !Ref CMKForSNSAndSQS
+      MaximumMessageSize: 262144
+      MessageRetentionPeriod: !Ref MessageRetentionPeriodInSeconds
+      QueueName: !Sub "${EnvironmentPrefix}-sms-notification-queue"
+      ReceiveMessageWaitTimeSeconds: 0
+      VisibilityTimeout: !Ref VisibilityTimeOut
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DLQSQSQueueForSMSNotification.Arn
+        maxReceiveCount: !Ref MaxReceiveCount
+
+  SNSNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      #ContentBasedDeduplication: false
+      DisplayName: !Sub "${EnvironmentPrefix}-notification-topic"
+      KmsMasterKeyId:  !Ref CMKForSNSAndSQS
+      TopicName: !Sub "${EnvironmentPrefix}-notification-topic"
+
+  QueuePolicyForNotificationQueues:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref SQSQueueForEmail
+        - !Ref SQSQueueForPushNotification
+        - !Ref SQSQueueForSMSNotification
+      PolicyDocument:
+        Statement:
+          -
+            Action:
+              - "SQS:SendMessage"
+            Effect: "Allow"
+            Resource:
+              - !GetAtt SQSQueueForEmail.Arn
+              - !GetAtt SQSQueueForPushNotification.Arn
+              - !GetAtt SQSQueueForSMSNotification.Arn
+            Principal:
+              Service: "sns.amazonaws.com"
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref SNSNotificationTopic
+
+  SnsSubscriptionEmail:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref SNSNotificationTopic
+      Protocol: sqs
+      Endpoint: !GetAtt SQSQueueForEmail.Arn
+      Region: !Ref "AWS::Region"
+      #DeliveryPolicy: retries etc to be defined
+      FilterPolicy:
+        channel:
+          - 2
+          - 3
+          - 6
+          - 7
+      RawMessageDelivery: true
+  SnsSubscriptionPushNotification:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref SNSNotificationTopic
+      Protocol: sqs
+      Endpoint: !GetAtt SQSQueueForPushNotification.Arn
+      Region: !Ref "AWS::Region"
+      #DeliveryPolicy: retries etc to be defined
+      FilterPolicy:
+        channel:
+          - 1
+          - 3
+          - 5
+          - 7
+      RawMessageDelivery:  true
+  SnsSubscriptionSMSNotification:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref SNSNotificationTopic
+      Protocol: sqs
+      Endpoint: !GetAtt SQSQueueForSMSNotification.Arn
+      Region: !Ref "AWS::Region"
+      #DeliveryPolicy: retries etc to be defined
+      FilterPolicy:
+        channel:
+          - 4
+          - 5
+          - 6
+          - 7
+      RawMessageDelivery:  true
+
+  # this bucket is for storing all the templates used by the notification service. will be accessible only to owner.
+  S3BucketForStoringTemplates:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketName: !Sub "${EnvironmentPrefix}${CustomDomain}"
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          -  ServerSideEncryptionByDefault:
+               SSEAlgorithm: !Ref S3SSEAlgorithm
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  #access logging bucket for cloudfront distribution , will be created if logging is enabled
+  LoggingBucket:
+    Type: AWS::S3::Bucket
+    Condition: IsEnableLogs
+    Properties:
+      AccessControl: LogDeliveryWrite
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  S3LoggingBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Condition: IsEnableLogs
+    Properties:
+      Bucket: !Ref LoggingBucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:*'
+            Effect: Deny
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref LoggingBucket
+                - /*
+            Principal: '*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+
+  OriginAccessIdentity:
+    Type: "AWS::CloudFront::CloudFrontOriginAccessIdentity"
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: Origin access identity for static resources used in Notification templates
+
+
+  OriginAccessIdentityBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3BucketForStoringTemplates
+      PolicyDocument:
+        Statement:
+          -
+            Action:
+              - 's3:*'
+            Effect: Deny
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref S3BucketForStoringTemplates
+                - /*
+            Principal: '*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+          -
+            Action:
+              - "s3:GetObject"
+            Effect: "Allow"
+            Resource:
+              Fn::Join:
+                - ""
+                -
+                  - "arn:aws:s3:::"
+                  - !Ref S3BucketForStoringTemplates
+                  - "/*"
+            Principal:
+              AWS:
+                Fn::Join:
+                  - ""
+                  -
+                    - "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity "
+                    - !Ref OriginAccessIdentity
+
+  CloudfrontdistributionForTemplates:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+        - DomainName: !GetAtt S3BucketForStoringTemplates.DomainName
+          Id: S3OriginConfig
+          S3OriginConfig:
+            OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${OriginAccessIdentity}"
+        Enabled: true
+        Comment: CloudFront Distribution for Notification service templates
+        Logging: !If
+          - IsEnableLogs
+          -
+            IncludeCookies: false
+            Bucket: !GetAtt LoggingBucket.DomainName
+            Prefix: !Ref EnvironmentPrefix
+          - !Ref "AWS::NoValue"
+        Aliases: !If
+        - HasCustomDomainEnabled
+        - - !Sub "${EnvironmentPrefix}${CustomDomain}"
+        - !Ref "AWS::NoValue"
+        DefaultCacheBehavior:
+          AllowedMethods:
+          - GET
+          - HEAD
+          - OPTIONS
+          TargetOriginId: S3OriginConfig
+          ViewerProtocolPolicy: redirect-to-https
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: none
+        PriceClass: !Ref PriceClass
+        ViewerCertificate: !If
+          - HasCustomDomainEnabled
+          - AcmCertificateArn: !Ref CertificateArn
+            MinimumProtocolVersion: "TLSv1.2_2018"
+            SslSupportMethod: sni-only
+          - CloudFrontDefaultCertificate: true
+        #WebACLId: !Ref WAFArn #disabling for now, as there is no WAF currently
+      Tags:
+        - Key: "Name"
+          Value: !Sub "${EnvironmentPrefix}-CloudFront-Distribution-Notification-Templates"
+
+  SecurityGroupForRedis:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${EnvironmentPrefix}-security-group-redis-cluster"
+      GroupDescription: "The security group created for Redis cluster"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        -
+          IpProtocol: tcp
+          ToPort: 6379
+          FromPort: 6379
+          CidrIp: 0.0.0.0/0
+
+  SubnetGroupForRedisCache:
+    Type: "AWS::ElastiCache::SubnetGroup"
+    Properties:
+      CacheSubnetGroupName: !Sub "${EnvironmentPrefix}-subnet-group-redis-cluster"
+      Description: "SubnetGroup is group of subnets which Redis Cluster will use for its nodes"
+      SubnetIds: !Ref SubnetIdsForRedisCluster
+
+  #check https://stackoverflow.com/questions/47431460/awselasticachecachecluster-vs-awselasticachereplicationgroup#47438571
+  # we can have a cluster created and indicate as primary cluster. so in case of failure of primary cluster, other read replica will become primary cluster
+  # https://docs.aws.amazon.com/AmazonElastiCache/latest/APIReference/API_CreateReplicationGroup.html
+  RedisCacheReplicationGroup:
+    Type: "AWS::ElastiCache::ReplicationGroup"
+    Properties:
+      AtRestEncryptionEnabled: true
+      AutomaticFailoverEnabled: true
+      CacheNodeType:  !Ref CacheNodeType
+      CacheSubnetGroupName: !Ref SubnetGroupForRedisCache
+      Engine: "redis"
+      MultiAZEnabled: true
+      NumCacheClusters: 2
+      #NumNodeGroups: 1  #this is creating conflict with NumCacheClusters.. if this property is off, then it means cluster mode disabled
+      ReplicationGroupDescription: !Sub "${EnvironmentPrefix}-elasticache-redis-cluster-replicationgroup"
+      SecurityGroupIds:
+        - !Ref SecurityGroupForRedis
+      SnapshotRetentionLimit: 4
+      TransitEncryptionEnabled: false
+
+Outputs:
+  SQSQueueForGeneralNotificationEventsArn:
+    Value: !GetAtt SQSQueueForGeneralNotificationEvents.Arn
+    Description: "The ARN of the SQS queue created for notification-events"
+  SQSQueueForEmailArn:
+    Value: !GetAtt SQSQueueForEmail.Arn
+    Description: "The ARN of the SQS queue created for email notifications"
+  SQSQueueForPushNotificationArn:
+    Value: !GetAtt SQSQueueForPushNotification.Arn
+    Description: "The ARN of the SQS queue created for push notifications"
+  SQSQueueForSMSNotificationArn:
+    Value: !GetAtt SQSQueueForSMSNotification.Arn
+    Description: "The ARN of the SQS queue created for SMS notifications"
+  SNSNotificationTopicArn:
+    Value: !Ref SNSNotificationTopic
+    Description: "The ARN of the SNS topic created for Notifications"
+  SnsSubscriptionEmailArn:
+    Value: !Ref SnsSubscriptionEmail
+    Description: "The id of the email queue subscription to SNS notification topic"
+  SnsSubscriptionPushNotificationArn:
+    Value: !Ref SnsSubscriptionPushNotification
+    Description: "The id of the push notif queue subscription to SNS notification topic"
+  SnsSubscriptionSMSNotificationArn:
+    Value: !Ref SnsSubscriptionSMSNotification
+    Description: "The id of the sms notif queue subscription to the SNS notification topic"
+  S3BucketForStoringTemplatesArn:
+    Value: !Ref S3BucketForStoringTemplates
+    Description: "The bucket name of the bucket created for storing the templates"
+  CloudfrontdistributionForTemplatesDetails:
+    Value: !Ref CloudfrontdistributionForTemplates
+    Description: "The cloudfront distribution created for the templates"
+  RedisCacheReplicationGroupDetails:
+    Value: !Ref RedisCacheReplicationGroup
+    Description: "The details of the redis cache replication group created"
+  CMKForSNSAndSQSDetails:
+    Value: !GetAtt CMKForSNSAndSQS.Arn
+    Description: "The ARN of the CMK created for SQS encryption"

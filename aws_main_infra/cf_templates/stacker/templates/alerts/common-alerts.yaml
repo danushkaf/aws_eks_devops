@@ -1,0 +1,738 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Common CloudWatch Alarms and Rules to enable better monitoring.
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  Email:
+    Type: String
+    Description: Provide an email address from DevOps/Admin team to send the alerts.
+    Default: dev-admin-notification@xyz.com
+
+Resources:
+
+  ConsoleSignInFailuresFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ ($.eventName = ConsoleLogin) && ($.errorMessage = "Failed authentication") }'
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-ConsoleSigninFailureCount"
+
+  ConsoleSignInFailuresAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alarms if more than 3 console sign-in failures occur in 5 minutes
+      AlarmName: !Sub "${EnvironmentPrefix}-ConsoleSignInFailuresAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-ConsoleSigninFailureCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 3
+
+  EC2InstanceStatusChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ ($.eventName = RunInstances) || ($.eventName = RebootInstances) || ($.eventName = StartInstances) || ($.eventName = StopInstances) || ($.eventName = TerminateInstances) }'
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-EC2InstanceEventCount"
+
+  EC2InstanceStatusChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alarm when EC2 instance configuration changes occur
+      AlarmName: !Sub "${EnvironmentPrefix}-EC2InstanceStatusChangesAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-EC2InstanceEventCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 1
+
+  EC2LargeInstancesChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ ($.eventName = RunInstances) && (($.requestParameters.instanceType = *.8xlarge) || ($.requestParameters.instanceType = *.4xlarge)) }'
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-EC2LargeInstanceEventCount"
+
+  EC2LargeInstancesChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alarm when EC2 Large instance configuration changes occur
+      AlarmName: !Sub "${EnvironmentPrefix}-EC2LargeInstancesChangesAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-EC2LargeInstanceEventCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 1
+
+  AWSAuthorizationFailuresFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      FilterPattern: '{ ($.errorCode = "*UnauthorizedOperation") || ($.errorCode = "AccessDenied*") }'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-AuthorizationFailureCount"
+
+  AWSAuthorizationFailuresAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alarms if more than 3 autherization failures occur in 5 minutes
+      AlarmName: !Sub "${EnvironmentPrefix}-AWSAuthorizationFailuresAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-AuthorizationFailureCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 3
+
+  VPCNetworkConfigChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ ($.eventName = CreateVpc) || ($.eventName = DeleteVpc) || ($.eventName = ModifyVpcAttribute) || ($.eventName = AcceptVpcPeeringConnection) || ($.eventName = CreateVpcPeeringConnection) || ($.eventName = DeleteVpcPeeringConnection) || ($.eventName = RejectVpcPeeringConnection) || ($.eventName = AttachClassicLinkVpc) || ($.eventName = DetachClassicLinkVpc) || ($.eventName = DisableVpcClassicLink) || ($.eventName = EnableVpcClassicLink) }'
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-VpcEventCount"
+
+  VPCNetworkConfigChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alrm when VPC configuration changes occur
+      AlarmName: !Sub "${EnvironmentPrefix}-VPCNetworkConfigChangesAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-VpcEventCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 1
+
+  VPCGatewayConfigChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ ($.eventName = CreateCustomerGateway) || ($.eventName = DeleteCustomerGateway) || ($.eventName = AttachInternetGateway) || ($.eventName = CreateInternetGateway) || ($.eventName = DeleteInternetGateway) || ($.eventName = DetachInternetGateway) }'
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-GatewayEventCount"
+
+  VPCGatewayConfigChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alarm when Internet Gateway configuration changes occur
+      AlarmName: !Sub "${EnvironmentPrefix}-VPCGatewayConfigChangesAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-GatewayEventCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 1
+
+  NetworkACLConfigChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ ($.eventName = CreateNetworkAcl) || ($.eventName = CreateNetworkAclEntry) || ($.eventName = DeleteNetworkAcl) || ($.eventName = DeleteNetworkAclEntry) || ($.eventName = ReplaceNetworkAclEntry) || ($.eventName = ReplaceNetworkAclAssociation) }'
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-NetworkAclEventCount"
+
+  NetworkACLConfigChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alarm when Network ACL configure changes occur
+      AlarmName: !Sub "${EnvironmentPrefix}-NetworkACLConfigChangesAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-NetworkAclEventCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 1
+
+  SecurityGroupConfigurationChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      FilterPattern: '{ ($.eventName = AuthorizeSecurityGroupIngress) || ($.eventName = AuthorizeSecurityGroupEgress) || ($.eventName = RevokeSecurityGroupIngress) || ($.eventName = RevokeSecurityGroupEgress) || ($.eventName = CreateSecurityGroup) || ($.eventName = DeleteSecurityGroup) }'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-SecurityGroupEventCount"
+
+  SecurityGroupConfigurationChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alarms if security group configuration changes occur
+      AlarmName: !Sub "${EnvironmentPrefix}-SecurityGroupConfigurationChangesAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-SecurityGroupEventCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 1
+
+  S3BucketConfigChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ ($.eventSource = s3.amazonaws.com) && (($.eventName = PutBucketAcl) || ($.eventName = PutBucketPolicy) || ($.eventName = PutBucketCors) || ($.eventName = PutBucketLifecycle) || ($.eventName = PutBucketReplication) || ($.eventName = DeleteBucketPolicy) || ($.eventName = DeleteBucketCors) || ($.eventName = DeleteBucketLifecycle) || ($.eventName = DeleteBucketReplication)) }'
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-S3BucketEventCount"
+
+  S3BucketConfigChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alarm when S3 bucket configuration changes occur
+      AlarmName: !Sub "${EnvironmentPrefix}-S3BucketConfigChangesAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-S3BucketEventCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 1
+
+  RouteTableConfigChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ ($.eventName = CreateRoute) || ($.eventName = CreateRouteTable) || ($.eventName = ReplaceRoute) || ($.eventName = ReplaceRouteTableAssociation) || ($.eventName = DeleteRouteTable) || ($.eventName = DeleteRoute) || ($.eventName = DisassociateRouteTable) }'
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-RouteTableEventCount"
+
+  RouteTableConfigChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alarm when route table configuration changes occur
+      AlarmName: !Sub "${EnvironmentPrefix}-RouteTableConfigChangesAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-RouteTableEventCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 1
+
+  AWSCloudTrailChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ ($.eventName = CreateTrail) || ($.eventName = UpdateTrail) || ($.eventName = DeleteTrail) || ($.eventName = StartLogging) || ($.eventName = StopLogging) }'
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-CloudTrailEventCount"
+
+  AWSCloudTrailChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alarm when cloud trail configurations changes occur
+      AlarmName: !Sub "${EnvironmentPrefix}-CloudTrailChangesAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-CloudTrailEventCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 1
+
+  AWSCMKChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ ($.eventSource = kms.amazonaws.com) && (($.eventName = DisableKey) || ($.eventName = ScheduleKeyDeletion)) }'
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-CMKEventCount"
+
+  AWSCMKChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alarm when Customer Master Key(CMK) configuration changes occur
+      AlarmName: !Sub "${EnvironmentPrefix}-CMKChangesAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-CMKEventCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 1
+
+  AWSConfigChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ ($.eventSource = config.amazonaws.com) && (($.eventName = StopConfigurationRecorder)||($.eventName = DeleteDeliveryChannel)||($.eventName = PutDeliveryChannel)||($.eventName = PutConfigurationRecorder)) }'
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-ConfigEventCount"
+
+  AWSConfigChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raise alarm when config change happens
+      AlarmName: !Sub "${EnvironmentPrefix}-AWSConfigChangesAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-ConfigEventCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 1
+
+  ConsoleSignInWithoutMFAFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ ($.eventName = "ConsoleLogin") && ($.additionalEventData.MFAUsed != "Yes") }'
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-ConsoleSignInWithoutMfaCount"
+
+  ConsoleSignInWithoutMFAAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alarm when console login failures happens
+      AlarmName: !Sub "${EnvironmentPrefix}-ConsoleSignInWithoutMFAAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-ConsoleSignInWithoutMfaCount"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 1
+
+  OrganizationsChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      FilterPattern: '{ ($.eventSource = organizations.amazonaws.com) && ($.eventName = AcceptHandshake) || ($.eventName = AttachPolicy) || ($.eventName = CancelHandshake) || ($.eventName = CreateAccount) || ($.eventName = CreateOrganization) || ($.eventName = CreateOrganizationalUnit) || ($.eventName = CreatePolicy) || ($.eventName = DeclineHandshake) || ($.eventName = DeleteOrganization) || ($.eventName = DeleteOrganizationalUnit) || ($.eventName = DeletePolicy) || ($.eventName = EnableAllFeatures) || ($.eventName = EnablePolicyType) || ($.eventName = InviteAccountToOrganization) || ($.eventName = LeaveOrganization) || ($.eventName = DetachPolicy) || ($.eventName = DisablePolicyType) || ($.eventName = MoveAccount) || ($.eventName = RemoveAccountFromOrganization) || ($.eventName = UpdateOrganizationalUnit) || ($.eventName = UpdatePolicy) }'
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      MetricTransformations:
+        -
+          MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-OrganizationsEvents"
+
+  OrganizationsChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: Raises alarm when organization configuration changes occur
+      AlarmName: !Sub "${EnvironmentPrefix}-OrganizationsChangesAlarm"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: !Sub "${EnvironmentPrefix}-OrganizationsEvents"
+      Namespace: "LogMetrics"
+      Period: 300
+      Statistic: Sum
+      Threshold: 1
+
+  IAMPolicyChangesFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      FilterPattern: "{($.eventName=DeleteGroupPolicy)||($.eventName=DeleteRolePolicy)||($.eventName=DeleteUserPolicy)||($.eventName=PutGroupPolicy)||($.eventName=PutRolePolicy)||($.eventName=PutUserPolicy)||($.eventName=CreatePolicy)||($.eventName=DeletePolicy)||($.eventName=CreatePolicyVersion)||($.eventName=DeletePolicyVersion)||($.eventName=AttachRolePolicy)||($.eventName=DetachRolePolicy)||($.eventName=AttachUserPolicy)||($.eventName=DetachUserPolicy)||($.eventName=AttachGroupPolicy)||($.eventName=DetachGroupPolicy)}"
+      MetricTransformations:
+        - MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-IAMPolicyEventCount"
+
+  IAMPolicyChangesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      MetricName: !Sub "${EnvironmentPrefix}-IAMPolicyEventCount"
+      Namespace: "LogMetrics"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      Period: 300
+      Statistic: Sum
+      Threshold: 1.0
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: If the IAM policies get changed, then trigger this alarm
+      AlarmName: !Sub "${EnvironmentPrefix}-IAMPolicyEventAlarm"
+
+  IAMRootFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: 'aws-controltower/CloudTrailLogs'
+      FilterPattern: '{$.userIdentity.type = "Root" && $.userIdentity.invokedBy NOT EXISTS && $.eventType != "AwsServiceEvent"}'
+      MetricTransformations:
+        - MetricValue: "1"
+          MetricNamespace: "LogMetrics"
+          MetricName: !Sub "${EnvironmentPrefix}-RootAccountUsageCount"
+
+  IAMRootAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      MetricName: !Sub "${EnvironmentPrefix}-RootAccountUsageCount"
+      Namespace: "LogMetrics"
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      Period: 300
+      Statistic: Sum
+      Threshold: 1.0
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: If root user do something, then trigger this alarm
+      AlarmName: !Sub "${EnvironmentPrefix}-RootAccountUsageAlarm"
+
+  CMKForSNSAndSQS:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: !Sub "This is ${EnvironmentPrefix} environment customer managed CMK for SQS and SNS."
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - sns.amazonaws.com
+                - cloudwatch.amazonaws.com
+                - logs.amazonaws.com
+                - events.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+  SnsTopicForCWAlerts:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref Email
+      TopicName: !Sub "${EnvironmentPrefix}-CW-Infra-Alerts"
+      KmsMasterKeyId:  !Ref CMKForSNSAndSQS
+
+  SnsTopicPolicyForCWAlerts:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        -
+          !Ref SnsTopicForCWAlerts
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Sid: DefaultPolicy
+            Principal:
+              AWS: "*"
+            Action:
+            - sns:GetTopicAttributes
+            - sns:SetTopicAttributes
+            - sns:AddPermission
+            - sns:RemovePermission
+            - sns:DeleteTopic
+            - sns:Subscribe
+            - sns:ListSubscriptionsByTopic
+            - sns:Publish
+            - sns:Receive
+            Resource: !Ref SnsTopicForCWAlerts
+            Condition:
+              StringEquals:
+                AWS:SourceOwner: !Ref AWS::AccountId
+          - Effect: Allow
+            Sid: AllowSNSPublishFromEventBridge
+            Action:
+            - sns:Publish
+            Resource: !Ref SnsTopicForCWAlerts
+            Principal:
+              Service: "events.amazonaws.com"
+          - Effect: Allow
+            Sid: AllowSNSPublishFromCW
+            Action:
+            - sns:Publish
+            Resource: !Ref SnsTopicForCWAlerts
+            Principal:
+              Service: "cloudwatch.amazonaws.com"
+          - Effect: Allow
+            Sid: AllowSNSPublishFromLogs
+            Action:
+            - sns:Publish
+            Resource: !Ref SnsTopicForCWAlerts
+            Principal:
+              Service: "logs.amazonaws.com"
+
+  RDSEventSubscription:
+    Properties:
+      Enabled: true
+      EventCategories:
+        - "configuration change"
+        - failure
+        - deletion
+      SnsTopicArn: !Ref SnsTopicForCWAlerts
+      SourceType: db-instance
+    Type: "AWS::RDS::EventSubscription"
+
+  RDSClusterEventSubscription:
+    Properties:
+      Enabled: true
+      EventCategories:
+        - "configuration change"
+        - failure
+        - deletion
+      SnsTopicArn: !Ref SnsTopicForCWAlerts
+      SourceType: db-cluster
+    Type: "AWS::RDS::EventSubscription"
+
+  CWAlarmAverageCPuUtilization:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 5
+      Period: 300
+      Statistic: Average
+      Threshold: 8.0
+      ActionsEnabled: true
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: If the average CPU Utilization is more across EC2 instances in auto-scaling cluster, then trigger this alarm
+      AlarmName: !Sub "${EnvironmentPrefix}-AverageCPUUtilization"
+
+  CWRuleEC2InstanceStoppingOrShutting:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Alert when EC2 instance is stopping or stopped or terminating
+      Name: !Sub "${EnvironmentPrefix}-EC2-Instance-State-Change"
+      EventPattern:
+        source:
+          - "aws.ec2"
+        detail-type:
+          - "EC2 Instance State-change Notification"
+        detail:
+          state:
+            - "stopping"
+            - "stopped"
+            - "shutting-down"
+            - "terminated"
+      State: "ENABLED"
+      Targets:
+      -
+        Arn: !Ref SnsTopicForCWAlerts
+        Id: SNSTopicToNotify
+        InputTransformer:
+          InputPathsMap:
+            instance: "$.detail.instance-id"
+            state: "$.detail.state"
+          InputTemplate: |
+            "The EC2 instance <instance> is now <state> "
+
+  CWRuleRDSHealthNotGood:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Alert when RDS health is not good.
+      Name: !Sub "${EnvironmentPrefix}-RDS-Health-Event"
+      EventPattern:
+        source:
+          - "aws.health"
+        detail-type:
+          - "AWS Health Event"
+        detail:
+          service:
+            - RDS
+      State:  ENABLED
+      Targets:
+      -
+        Arn: !Ref SnsTopicForCWAlerts
+        Id: SNSTopicToNotify
+        InputTransformer:
+          InputPathsMap:
+            resources: "$.resources"
+            eventTypeCode: "$.detail.eventTypeCode"
+          InputTemplate: |
+            "The health of the RDS <resources> has changed. EventTypeCode is <eventTypeCode>"
+
+  CWRuleEC2HealthEvent:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Alert when health of EC2 changes
+      Name: !Sub "${EnvironmentPrefix}-EC2-Health-Event"
+      EventPattern:
+        source:
+          - "aws.health"
+        detail-type:
+          - "AWS Health Event"
+        detail:
+          service:
+            - EC2
+      State: ENABLED
+      Targets:
+      -
+        Arn: !Ref SnsTopicForCWAlerts
+        Id: SNSTopicToNotify
+        InputTransformer:
+          InputPathsMap:
+            resources: "$.resources"
+            eventTypeCode: "$.detail.eventTypeCode"
+          InputTemplate: |
+            "The health of the EC2 instance <resources> has changed. EventTypeCode is <eventTypeCode>"
+
+  CWRuleAutoScalingEventHappened:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Alert when AutoScaling events happen
+      Name: !Sub "${EnvironmentPrefix}-AutoScaling-Event"
+      EventPattern:
+        source:
+          - "aws.autoscaling"
+        detail-type:
+          - "EC2 Instance Launch Successful"
+          - "EC2 Instance Terminate Successful"
+          - "EC2 Instance Launch Unsuccessful"
+          - "EC2 Instance Terminate Unsuccessful"
+          - "EC2 Instance-launch Lifecycle Action"
+          - "EC2 Instance-terminate Lifecycle Action"
+      State: ENABLED
+      Targets:
+      -
+        Arn: !Ref SnsTopicForCWAlerts
+        Id: SNSTopicToNotify
+        InputTransformer:
+          InputPathsMap:
+            statusCode: "$.detail.StatusCode"
+            autoScalingGroupName: "$.detail.AutoScalingGroupName"
+            eC2InstanceId: "$.detail.EC2InstanceId"
+            cause: "$.detail.Cause"
+          InputTemplate: |
+            "An AutoScaling event has happened. EC2 instance involved <eC2InstanceId>. AutoScaling Group name <autoScalingGroupName>. Cause is <cause>"
+
+Outputs:
+  CWAlarmAverageCPuUtilization:
+    Value: !Ref CWAlarmAverageCPuUtilization
+  CWRuleAutoScalingEventHappened:
+    Value: !Ref CWRuleAutoScalingEventHappened
+  CWRuleEC2HealthEvent:
+    Value: !Ref CWRuleEC2HealthEvent
+  CWRuleRDSHealthNotGood:
+    Value: !Ref CWRuleRDSHealthNotGood

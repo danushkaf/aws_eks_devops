@@ -1,0 +1,727 @@
+# this is an minimal `stack config` file.
+# http://stacker.readthedocs.io/en/latest/config.html
+#
+# The stacker namespace, provided by the environment file.
+# http://stacker.readthedocs.io/en/latest/config.html#namespace-delimiter
+namespace: ${namespace}
+
+# The bucket where stacker stores generated CloudFormation templates.
+# http://stacker.readthedocs.io/en/latest/config.html#s3-bucket
+stacker_bucket: ''
+
+# This sets the syspath to include the local path, which allows access to the
+# blueprints in the blueprints directory.
+# http://stacker.readthedocs.io/en/latest/config.html#module-paths
+sys_path: .
+
+# The stacks key accepts a list of stack declarations.
+# http://stacker.readthedocs.io/en/latest/config.html#stacks
+# variables which have default values need not be specified here. if specified, values speciifed here will
+# override the values in CF template
+stacks:
+
+  - name: ${shared_stack_name}
+    template_path: ${template_path}/templates/shared_account/shared-access-roles.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      DeploymentAccountName: ${infrastructure_account_name}
+      DeploymentAccountId: ${infrastructure_account_id}
+
+  - name: ${main_infrastructure_stack_name}
+    template_path: ${template_path}/templates/main-templates/xyz-infra.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      ClusterName: ${eks_cluster_name}
+      VpcBlock: ${il_vpc_block}
+      KeyName: ${key_pair}
+      BastionKeyName: ${il_bastion_key_pair}
+      BastionImageID: ${il_bastion_ami}
+      BastionInstanceType: ${il_bastion_instance_type}
+      BastionNodeVolumeSize: ${il_bastion_volume_size}
+      BastionNodeAutoScalingGroupMinSize: ${il_bastion_asg_min}
+      BastionNodeAutoScalingGroupDesiredCapacity: ${il_bastion_asg_desired}
+      BastionNodeAutoScalingGroupMaxSize: ${il_bastion_asg_max}
+      NodeAutoScalingGroupMinSize: ${asg_min}
+      NodeAutoScalingGroupDesiredCapacity: ${asg_desired}
+      NodeAutoScalingGroupMaxSize: ${asg_max}
+      DBAutoScalingGroupMinSize: ${db_asg_min}
+      DBAutoScalingGroupMaxSize: ${db_asg_max}
+      NodeGroupName: ${asg_name}
+      NodeImageIdSSMParam: ${node_image_ssm_param}
+      NodeInstanceType: ${node_instance_type}
+      DatabaseUsername: ${db_username}
+      DatabasePassword: ${db_password}
+      DatabaseName: ${db_name}
+      InstanceType: ${db_instance_type}
+      DBClusterIdentifier: ${rds_clustername}
+      DatabaseReplication: ${db_replication_enabled}
+      RDSBackupRetentionPeriod: ${rds_backup_retention_period}
+      FluentdSharedLogRoleARN: ${output ${shared_stack_name}::CWLogsAccessRoleArn}
+      Route53SharedRoleARN: ${output ${shared_stack_name}::Route53RoleArn}
+
+  - name: ${main_infrastructure_db_init_stack_name}
+    template_path: ${template_path}/templates/main-templates/xyz-db-init.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      LambdaPrefix: il
+      VPCID: ${output ${main_infrastructure_stack_name}::VpcId}
+      PrivateSubnets: ${output ${main_infrastructure_stack_name}::SubnetIds}
+      LambdaS3BucketName: ${il_lambda_s3_bucket_name}
+      ILSQLLambdaFileName: ${il_rds_init_lambda_file_name}
+      SecretArn: ${output ${main_infrastructure_stack_name}::DBPasswordSecretOutput}
+      ADBSecurityGroup: ${output ${main_infrastructure_stack_name}::ADBSecurityGroup}
+      SecGroupPort: ${mysql_port}
+      LambdaKeyArn: ${output ${main_infrastructure_stack_name}::LambdaKey}
+
+  - name: ${main_dr_infrastructure_stack_name}
+    template_path: ${template_path}/templates/main-templates/the-xyz-DR.yaml
+    region: ${drregion}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      CustomResourceLambdaExecutionRoleArn: ${output ${main_infrastructure_stack_name}::CustomResourceLambdaExecutionRoleArn}
+
+  - name: ${main_rds_crr_infrastructure_stack_name}
+    template_path: ${template_path}/templates/main-templates/xyz-crr-resources.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      RDSClusterIdentifier: ${rds_clustername}
+      LambdaS3BucketName: ${il_lambda_s3_bucket_name}
+      CRRLambdaFileName: ${il_rds_crr_lambda_file_name}
+      LambdaFunctionPrefix: il
+      CustomResourceLambdaExecutionRoleArn: ${output ${main_infrastructure_stack_name}::CustomResourceLambdaExecutionRoleArn}
+      RDSKey: ${output ${main_dr_infrastructure_stack_name}::RDSKey}
+      DRRegion: ${drregion}
+
+  - name: ${main_owsap_waf_rule_group_stack_name}
+    template_path: ${template_path}/templates/enhanced-security/owsap-waf-rules.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      BlacklistCidrs: ${blacklist_cidrs}
+      MambuCidrs: ${mambu_cidrs}
+      CsrfExpectedHeader: ${owsap_csrf_header_name}
+      CsrfExpectedSize: ${owsap_csrf_header_size}
+      MaxExpectedURISize: ${owsap_max_uri_size}
+      MaxExpectedQueryStringSize: ${owsap_max_query_size}
+      MaxExpectedBodySize: ${owsap_max_body_size}
+      MaxExpectedOSBodySize: ${owsap_os_max_body_size}
+      MaxExpectedCookieSize: ${owsap_max_cookie_size}
+
+  - name: ${main_infrastructure_node_stack_name}
+    template_path: ${template_path}/templates/main-templates/xyz-infra-nodegroup.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      ClusterName: ${eks_cluster_name}
+      KeyName: ${key_pair}
+      NodeAutoScalingGroupMinSize: ${asg_min}
+      NodeAutoScalingGroupDesiredCapacity: ${asg_desired}
+      NodeAutoScalingGroupMaxSize: ${asg_max}
+      NodeGroupName: ${asg_name}
+      NodeImageIdSSMParam: ${node_image_ssm_param}
+      NodeInstanceType: ${node_instance_type}
+      NodeSecurityGroup: ${output ${main_infrastructure_stack_name}::NodeSecurityGroup}
+      NodeInstanceProfile: ${output ${main_infrastructure_stack_name}::NodeInstanceProfile}
+      PrivateSubnets: ${output ${main_infrastructure_stack_name}::SubnetIds}
+
+  - name: ${secrets_stack_name}
+    template_path: ${template_path}/templates/secrets/secrets.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      MambuUsername: '${mambu_username}'
+      MambuPassword: '${mambu_password}'
+      NodeInstanceRole: ${output ${main_infrastructure_stack_name}::NodeInstanceRole}
+      TruNarrativeCredential: '${trunarrative_credential}'
+      ClearBankCredential: '${clearbank_credential}'
+      ClearBankAccount: '${clearbank_account}'
+      ClearBankPublicKey: '${clearbank_pub_key}'
+      SecretKey: ${output ${main_infrastructure_stack_name}::SecretKey}
+
+  - name: ${alerts_stack_name}
+    template_path: ${template_path}/templates/alerts/common-alerts.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      Email: ${infra_events_notify_email}
+
+  - name: ${notification_stack_name}
+    template_path: ${template_path}/templates/service-resources/notification-service.cfn.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      S3SSEAlgorithm: ${notification_s3_sse_algorithm}
+      VisibilityTimeOut: ${notification_visibility_timeout}
+      MessageRetentionPeriodInSeconds: ${notification_msg_retention_period}
+      CacheNodeType: ${notification_cdn_cache_node_type}
+      VpcId: ${output ${main_infrastructure_stack_name}::VpcId}
+      SubnetIdsForRedisCluster: ${output ${main_infrastructure_stack_name}::SubnetIds}
+      CustomDomain: ${notification_template_cdn_dns}
+      PriceClass: ${notification_cdn_price_class}
+      CertificateArn: ${us_east_1_cert_arn}
+      MaxReceiveCount: ${notification_max_msg_recieve_count}
+      EnableLogs: ${notification_cdn_enable_logs}
+      LambdaS3BucketName: ${il_lambda_s3_bucket_name}
+      LogLambdaS3FileName: ${notification_log_lambda_s3_file_name}
+      LogLambdaMemorySizeMB: ${notification_log_lambda_max_memory}
+      LogLambdaTimeoutSeconds: ${notification_log_lambda_timeout}
+      LogDeliveryStatusLambdaS3FileName: ${notification_log_delivery_status_custom_resource_lambda_s3_file_name}
+      LogDeliveryStatusLambdaMemorySizeMB: ${notification_log_delivery_status_custom_resource_lambda_max_memory}
+      LogDeliveryStatusLambdaTimeoutSeconds: ${notification_log_delivery_status_custom_resource_lambda_timeout}
+      NodeInstanceRole: ${output ${main_infrastructure_stack_name}::NodeInstanceRole}
+      NodeSecurityGroup: ${output ${main_infrastructure_stack_name}::NodeSecurityGroup}
+      LambdaKeyArn: ${output ${main_infrastructure_stack_name}::LambdaKey}
+
+  - name: ${notification_dns_stack_name}
+    template_path: ${template_path}/templates/service-resources/route53.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      AWSDNSName: ${output ${notification_stack_name}::CloudfrontdistributionForTemplatesDNS}
+      BusinessDNSName: ${notification_template_cdn_dns}
+      HostedZoneName: ${hosted_zone_name}
+      AWSHostedZoneID: Z2FDTNDATAQYW2
+
+  - name: ${payment_stack_name}
+    template_path: ${template_path}/templates/service-resources/payment-service.cfn.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      VisibilityTimeOut: ${payment_visibility_timeout}
+      MessageRetentionPeriodInSeconds: ${payment_msg_retention_period}
+      MaxReceiveCount: ${payment_max_msg_recieve_count}
+      MaxMessageSizeInBytes: ${payment_max_msg_size}
+      ReceiveMessageWaitTimeSeconds: ${payment_recieve_msg_wait_time_secs}
+      NodeInstanceRole: ${output ${main_infrastructure_stack_name}::NodeInstanceRole}
+
+  # - name: ${document_stack_name}
+  #   template_path: ${template_path}/templates/service-resources/document-service.cfn.yaml
+  #   region: ${region}
+  #   profile: ${infrastructure_profile}
+  #   variables:
+  #     EnvironmentPrefix: ${environment_prefix}
+  #     ReadCapacityUnits: ${document_read_capacity_units}
+  #     WriteCapacityUnits: ${document_write_capacity_units}
+  #     MaxReadCapacityUnits: ${document_max_read_capacity_units}
+  #     MaxWriteCapacityUnits: ${document_max_write_capacity_units}
+  #     RetentionDaysForDocuments: ${document_retention_days}
+  #     NodeInstanceRole: ${output ${main_infrastructure_stack_name}::NodeInstanceRole}
+  #     # ReplicationBucketArn: ${output}
+  #     # ReplicaKmsKeyID: ${output}
+  #     # DrRegion: ${drregion}
+  #     S3BucketReplicationChoice: ${document_enable_s3_replication}
+  #     ProvisionedThroughPutChoice: ${document_enable_provisioned_throughput}
+  #     EnablePITR: ${document_enable_point_in_time_recovery}
+
+  - name: ${os_infra_stack_name}
+    template_path: ${template_path}/templates/outsystems-resources/os-resources.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      VpcBlock: ${os_vpc_block}
+      ILVpcBlock: ${il_vpc_block}
+      ILVPCID: ${output ${main_infrastructure_stack_name}::VpcId}
+      ILPublicRouteTableID: ${output ${main_infrastructure_stack_name}::RouteTable}
+      ILPrivateRouteTableID: ${output ${main_infrastructure_stack_name}::RouteTablePrivate}
+      Subnet01Block: ${os_subnet01_cidr}
+      Subnet02Block: ${os_subnet02_cidr}
+      Subnet03Block: ${os_subnet03_cidr}
+      Subnet04Block: ${os_subnet04_cidr}
+      Subnet05Block: ${os_subnet05_cidr}
+      Subnet06Block: ${os_subnet06_cidr}
+      KeyName: ${os_key_name}
+      NodeGroupName: ${os_asg_name}
+      DBClusterIdentifier: ${os_db_cluster_id}
+      DBInstanceType: ${os_rds_instance_type}
+      DatabaseReplication: ${os_db_replication}
+      RDSBackupRetentionPeriod: ${os_db_backup_retention_days}
+      SQLServerEngine: ${os_sql_server_engine}
+      SQLServerVersion: ${os_sql_server_version}
+      SQLServerAllocatedStorage: ${os_sql_server_allocated_storage}
+      OutSystemsHostname: ${os_hostname}
+      OutSystemsAPIHostname: ${os_api_hostname}
+      OutSystemsCertArn: ${os_cert_arn}
+      DatabaseUsername: ${os_db_username}
+      DatabasePassword: ${os_db_password}
+      OutSystemsAdminDBUsername: ${os_system_admin_db_username}
+      OutSystemsAdminDBPassword: ${os_system_admin_db_password}
+      OutSystemsRuntimeDBAdminUsername: ${os_runtime_admin_db_username}
+      OutSystemsRuntimeDBAdminPassword: ${os_runtime_admin_db_password}
+      OutSystemsRuntimeLoggingDBAdminUsername: ${os_runtime_log_admin_db_username}
+      OutSystemsRuntimeLoggingDBAdminPassword: ${os_runtime_log_admin_db_password}
+      OutSystemsSessionDBAdminUsername: ${os_session_admin_db_username}
+      OutSystemsSessionDBAdminPassword: ${os_session_admin_db_password}
+      OutSystemsPlatformPassword: ${os_platform_admin_db_password}
+      OutSystemsServicePassword: ${os_service_password}
+      OutSystemsCatalogDatabaseName: ${os_platform_dbname}
+      OutSystemsSessionDatabaseName: ${os_session_dbname}
+      OutSystemsETLAdminDBUsername: ${os_etl_admin_db_username}
+      OutSystemsETLAdminDBPassword: ${os_etl_admin_db_password}
+      OutSystemsETLRODBUsername: ${os_etl_ro_db_username}
+      OutSystemsETLRODBPassword: ${os_etl_ro_db_password}
+      SecretKey: ${output ${main_infrastructure_stack_name}::SecretKey}
+
+  - name: ${os_dr_infra_stack_name}
+    template_path: ${template_path}/templates/main-templates/the-xyz-DR.yaml
+    region: ${drregion}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      CustomResourceLambdaExecutionRoleArn: ${output ${os_infra_stack_name}::CustomResourceLambdaExecutionRoleArn}
+
+  - name: ${os_rds_crr_infra_stack_name}
+    template_path: ${template_path}/templates/main-templates/xyz-crr-resources.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      RDSClusterIdentifier: ${os_db_cluster_id}-primary
+      LambdaS3BucketName: ${il_lambda_s3_bucket_name}
+      CRRLambdaFileName: ${os_rds_crr_lambda_file_name}
+      LambdaFunctionPrefix: os
+      CustomResourceLambdaExecutionRoleArn: ${output ${os_infra_stack_name}::CustomResourceLambdaExecutionRoleArn}
+      RDSKey: ${output ${os_dr_infra_stack_name}::RDSKey}
+      DRRegion: ${drregion}
+
+  - name: ${os_controller_infra_stack_name}
+    template_path: ${template_path}/templates/outsystems-resources/os-controller-resources.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      KeyName: ${os_key_name}
+      NodeAutoScalingGroupDesiredCapacity: ${os_asg_desired}
+      NodeAutoScalingGroupMaxSize: ${os_asg_max}
+      NodeAutoScalingGroupMinSize: ${os_asg_min}
+      PolicyTargetValue: ${os_asg_scaling_cpu_value}
+      NodeGroupName: ${os_asg_name}
+      NodeImageId: ${os_server_ami}
+      NodeInstanceType: ${os_server_instance_type}
+      NodeVolumeSize: ${os_primary_ebs_size}
+      SecondNodeVolumeSize: ${os_secondary_ebs_size}
+      OutSystemsAdminDBUsername: ${os_system_admin_db_username}
+      OutSystemsAdminDBPassword: ${os_system_admin_db_password}
+      NodeSecurityGroup: ${output ${os_infra_stack_name}::NodeSecurityGroup}
+      NodeInstanceProfile: ${output ${os_infra_stack_name}::NodeInstanceProfile}
+      TargetGroup: ${output ${os_infra_stack_name}::TargetGroup}
+      PrivateTargetGroup: ${output ${os_infra_stack_name}::PrivateTargetGroup}
+      PrivateSubnets: ${output ${os_infra_stack_name}::SubnetIds}
+      DatabasePrimaryInstanceEndpointAddress: ${output ${os_infra_stack_name}::DatabasePrimaryInstanceEndpointAddress}
+      OutSystemsCatalogDatabaseName: ${os_platform_dbname}
+      DatabaseUsername: ${os_db_username}
+      DatabasePassword: ${os_db_password}
+      OutSystemsHostname: ${os_hostname}
+      OutSystemsAPIHostname: ${os_api_hostname}
+      OutSystemsCertArn: ${os_cert_arn}
+      OutSystemsAdminDBUsername: ${os_system_admin_db_username}
+      OutSystemsAdminDBPassword: ${os_system_admin_db_password}
+      OutSystemsRuntimeDBAdminUsername: ${os_runtime_admin_db_username}
+      OutSystemsRuntimeDBAdminPassword: ${os_runtime_admin_db_password}
+      OutSystemsRuntimeLoggingDBAdminUsername: ${os_runtime_log_admin_db_username}
+      OutSystemsRuntimeLoggingDBAdminPassword: ${os_runtime_log_admin_db_password}
+      OutSystemsSessionDBAdminUsername: ${os_session_admin_db_username}
+      OutSystemsSessionDBAdminPassword: ${os_session_admin_db_password}
+      OutSystemsPlatformPassword: ${os_platform_admin_db_password}
+      OutSystemsServicePassword: ${os_service_password}
+      OutSystemsCatalogDatabaseName: ${os_platform_dbname}
+      OutSystemsSessionDatabaseName: ${os_session_dbname}
+      OutSystemsETLAdminDBUsername: ${os_etl_admin_db_username}
+      OutSystemsETLAdminDBPassword: ${os_etl_admin_db_password}
+      OutSystemsETLRODBUsername: ${os_etl_ro_db_username}
+      OutSystemsETLRODBPassword: ${os_etl_ro_db_password}
+
+  - name: ${os_automation_infra_stack_name}
+    template_path: ${template_path}/templates/outsystems-resources/os-automation-resources.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      NodeGroup: ${output ${os_controller_infra_stack_name}::NodeGroup}
+      TargetGroup: ${output ${os_infra_stack_name}::TargetGroup}
+      TargetGroupFullName: ${output ${os_infra_stack_name}::TargetGroupFullName}
+      LoadBalancerFullName: ${output ${os_infra_stack_name}::LoadBalancerFullName}
+      Email: ${infra_events_notify_email}
+      LambdaKeyArn: ${output ${main_infrastructure_stack_name}::LambdaKey}
+      NodeInstanceRole: ${output ${os_infra_stack_name}::NodeInstanceRole}
+
+  - name: ${os_route53_stack_name}
+    template_path: ${template_path}/templates/outsystems-resources/os-route53-resources.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      OSLBDNSName: ${output ${os_infra_stack_name}::OSLBDNSName}
+      OSLBDNSHostedZoneID: ${output ${os_infra_stack_name}::OSLBDNSHostedZoneID}
+      OutSystemsHostname: ${os_hostname}
+      OutSystemsAPIHostname: ${os_api_hostname}
+      HostedZoneName: ${os_hostedzone}
+
+  - name: ${os_waf_infra_stack_name}
+    template_path: ${template_path}/templates/outsystems-resources/os-resources-waf.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      OSLoadBalancer: ${output ${os_infra_stack_name}::OSLoadBalancer}
+      OWSAPWAFRuleGroupARN: ${output ${main_owsap_waf_rule_group_stack_name}::WAFRuleGroup}
+
+  - name: ${os_lifetime_infra_stack_name}
+    template_path: ${template_path}/templates/outsystems-resources/os-lifetime-prod.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      VPCID: ${output ${os_infra_stack_name}::VpcId}
+      KeyName: ${os_key_name}
+      Certificate: ${os_cert_arn}
+      NodeGroupName: ${os_lifetime_asg_name}
+      NodeImageId: ${os_lifetime_server_ami}
+      NodeInstanceType: ${os_lifetime_server_instance_type}
+      NodeVolumeSize: ${os_lifetime_primary_ebs_size}
+      SecondNodeVolumeSize: ${os_lifetime_secondary_ebs_size}
+      NodeSecurityGroup: ${output ${os_infra_stack_name}::NodeSecurityGroup}
+      NodeInstanceProfile: ${output ${os_infra_stack_name}::NodeInstanceProfile}
+      NodeAutoScalingGroupDesiredCapacity: ${os_lifetime_asg_desired}
+      NodeAutoScalingGroupMaxSize: ${os_lifetime_asg_max}
+      NodeAutoScalingGroupMinSize: ${os_lifetime_asg_min}
+      ALBSecurityGroup: ${output ${os_infra_stack_name}::ALBSecurityGroup}
+      PrivateSubnets: ${output ${os_infra_stack_name}::SubnetIds}
+      PublicSubnets: ${output ${os_infra_stack_name}::PublicSubnetIds}
+      DatabasePrimaryInstanceEndpointAddress: ${output ${os_infra_stack_name}::DatabasePrimaryInstanceEndpointAddress}
+      DatabaseUsername: ${os_db_username}
+      DatabasePassword: ${os_db_password}
+      OutSystemsHostname: ${os_lifetime_hostname}
+      OutSystemsAdminDBUsername: ${os_lifetime_system_admin_db_username}
+      OutSystemsAdminDBPassword: ${os_lifetime_system_admin_db_password}
+      OutSystemsRuntimeDBAdminUsername: ${os_lifetime_runtime_admin_db_username}
+      OutSystemsRuntimeDBAdminPassword: ${os_lifetime_runtime_admin_db_password}
+      OutSystemsRuntimeLoggingDBAdminUsername: ${os_lifetime_runtime_log_admin_db_username}
+      OutSystemsRuntimeLoggingDBAdminPassword: ${os_lifetime_runtime_log_admin_db_password}
+      OutSystemsSessionDBAdminUsername: ${os_lifetime_session_admin_db_username}
+      OutSystemsSessionDBAdminPassword: ${os_lifetime_session_admin_db_password}
+      OutSystemsPlatformPassword: ${os_lifetime_platform_admin_db_password}
+      OutSystemsServicePassword: ${os_lifetime_service_password}
+      OutSystemsCatalogDatabaseName: ${os_lifetime_platform_dbname}
+      OutSystemsSessionDatabaseName: ${os_lifetime_session_dbname}
+      PolicyTargetValue: ${os_lifetime_asg_scaling_cpu_value}
+      SecretKey: ${output ${main_infrastructure_stack_name}::SecretKey}
+
+  - name: ${os_lifetime_route53_stack_name}
+    template_path: ${template_path}/templates/outsystems-resources/os-lifetime-route53-resources.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      OSLBDNSName: ${output ${os_lifetime_infra_stack_name}::OSLoadBalancerDNSName}
+      OSLBDNSHostedZoneID: ${output ${os_lifetime_infra_stack_name}::OSLoadBalancerCanonicalHostedZoneID}
+      OutSystemsHostname: ${os_lifetime_hostname}
+      HostedZoneName: ${os_lifetime_hostedzone}
+
+  - name: ${os_lifetime_waf_infra_stack_name}
+    template_path: ${template_path}/templates/outsystems-resources/os-lifetime-resources-waf.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      OSLoadBalancer: ${output ${os_lifetime_infra_stack_name}::OSLoadBalancer}
+      OWSAPWAFRuleGroupARN: ${output ${main_owsap_waf_rule_group_stack_name}::WAFRuleGroup}
+
+  - name: ${os_frontend_infra_stack_name}
+    template_path: ${template_path}/templates/outsystems-resources/os-frontend-resources.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      KeyName: ${os_key_name}
+      NodeAutoScalingGroupDesiredCapacity: ${os_frontend_asg_desired}
+      NodeAutoScalingGroupMaxSize: ${os_frontend_asg_max}
+      NodeAutoScalingGroupMinSize: ${os_frontend_asg_min}
+      PolicyTargetValue: ${os_frontend_asg_scaling_cpu_value}
+      NodeGroupName: ${os_asg_name}
+      NodeImageId: ${os_frontend_server_ami}
+      NodeInstanceType: ${os_server_instance_type}
+      NodeVolumeSize: ${os_primary_ebs_size}
+      SecondNodeVolumeSize: ${os_secondary_ebs_size}
+      NodeSecurityGroup: ${output ${os_infra_stack_name}::NodeSecurityGroup}
+      NodeInstanceProfile: ${output ${os_infra_stack_name}::NodeInstanceProfile}
+      TargetGroup: ${output ${os_infra_stack_name}::TargetGroup}
+      PrivateTargetGroup: ${output ${os_infra_stack_name}::PrivateTargetGroup}
+      PrivateSubnets: ${output ${os_infra_stack_name}::SubnetIds}
+      DatabasePrimaryInstanceEndpointAddress: ${output ${os_infra_stack_name}::DatabasePrimaryInstanceEndpointAddress}
+      OutSystemsAdminDBUsername: ${os_system_admin_db_username}
+      OutSystemsAdminDBPassword: ${os_system_admin_db_password}
+      OutSystemsRuntimeDBAdminUsername: ${os_runtime_admin_db_username}
+      OutSystemsRuntimeDBAdminPassword: ${os_runtime_admin_db_password}
+      OutSystemsRuntimeLoggingDBAdminUsername: ${os_runtime_log_admin_db_username}
+      OutSystemsRuntimeLoggingDBAdminPassword: ${os_runtime_log_admin_db_password}
+      OutSystemsSessionDBAdminUsername: ${os_session_admin_db_username}
+      OutSystemsSessionDBAdminPassword: ${os_session_admin_db_password}
+      OutSystemsPlatformPassword: ${os_platform_admin_db_password}
+      OutSystemsServicePassword: ${os_service_password}
+      OutSystemsCatalogDatabaseName: ${os_platform_dbname}
+      OutSystemsSessionDatabaseName: ${os_session_dbname}
+      ControllerAMIHostname: ${os_controller_ami_hostname}
+
+  - name: ${os_listener_rules_stack_name}
+    template_path: ${template_path}/templates/outsystems-resources/os-listener-rules.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      TargetGroup: ${output ${os_infra_stack_name}::TargetGroup}
+      HTTPSListener: ${output ${os_infra_stack_name}::HTTPSListener}
+
+  - name: ${snapshot_archive_stack_name}
+    template_path: ${template_path}/templates/main-templates/xyz-snapshot-archive-resources.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      SnapshotRetentionInDays: ${snapshot_archive_retention_days}
+      SnapshotExpirationInDays: ${snapshot_archive_expiration_days}
+      SnapshotArchiveInDays: ${snapshot_archive_glacier_days}
+      SnapshotIAInDays: ${snapshot_archive_ia_days}
+      LambdaS3BucketName: ${il_lambda_s3_bucket_name}
+      SnapshotArchiveLambdaFileName: ${snapshot_archive_lambda_file_name}
+      SnapshotArchiveCron: ${snapshot_archive_cron}
+      SnapshotDeleteLambdaFileName: ${snapshot_archive_delete_lambda_file_name}
+      SnapshotDeleteCron: ${snapshot_archive_delete_cron}
+
+  - name: ${snapshot_archive_dr_stack_name}
+    template_path: ${template_path}/templates/main-templates/xyz-snapshot-archive-resources.yaml
+    region: ${drregion}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${dr_environment_prefix}
+      SnapshotRetentionInDays: ${snapshot_archive_retention_days}
+      SnapshotExpirationInDays: ${snapshot_archive_expiration_days}
+      SnapshotArchiveInDays: ${snapshot_archive_glacier_days}
+      SnapshotIAInDays: ${snapshot_archive_ia_days}
+      LambdaS3BucketName: ${il_lambda_s3_bucket_name}
+      SnapshotArchiveLambdaFileName: ${snapshot_archive_lambda_file_name}
+      SnapshotArchiveCron: ${snapshot_archive_cron}
+      SnapshotDeleteLambdaFileName: ${snapshot_archive_delete_lambda_file_name}
+      SnapshotDeleteCron: ${snapshot_archive_delete_cron}
+
+  - name: ${datalake_dr_infra_stack_name}
+    template_path: ${template_path}/templates/datalake-resources/data-resources-DR.yaml
+    region: ${drregion}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+
+  - name: ${datalake_infra_stack_name}
+    template_path: ${template_path}/templates/datalake-resources/data-resources.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      VpcBlock: ${datalake_vpc_block}
+      ILVpcBlock: ${il_vpc_block}
+      OSVpcBlock: ${os_vpc_block}
+      OSVPCID: ${output ${os_infra_stack_name}::VpcId}
+      ILVPCID: ${output ${main_infrastructure_stack_name}::VpcId}
+      OSDBSecurityGroup: ${output ${os_infra_stack_name}::ADBSecurityGroup}
+      ILDBSecurityGroup: ${output ${main_infrastructure_stack_name}::ADBSecurityGroup}
+      OSPublicRouteTableID: ${output ${os_infra_stack_name}::RouteTable}
+      OSPrivateRouteTableID: ${output ${os_infra_stack_name}::RouteTablePrivate}
+      ILPublicRouteTableID: ${output ${main_infrastructure_stack_name}::RouteTable}
+      ILPrivateRouteTableID: ${output ${main_infrastructure_stack_name}::RouteTablePrivate}
+      Subnet01Block: ${datalake_subnet01_cidr}
+      Subnet02Block: ${datalake_subnet02_cidr}
+      Subnet03Block: ${datalake_subnet03_cidr}
+      Subnet04Block: ${datalake_subnet04_cidr}
+      Subnet05Block: ${datalake_subnet05_cidr}
+      Subnet06Block: ${datalake_subnet06_cidr}
+      KeyName: ${datalake_key_name}
+      WindowsNodeAutoScalingGroupDesiredCapacity: ${datalake_windows_ec2_asg_desired}
+      WindowsNodeAutoScalingGroupMaxSize: ${datalake_windows_ec2_asg_max}
+      WindowsNodeAutoScalingGroupMinSize: ${datalake_windows_ec2_asg_min}
+      WindowsNodeImageID: ${datalake_windows_ec2_image_id}
+      WindowsNodeInstanceType: ${datalake_windows_ec2_instance_type}
+      WindowsNodeVolumeSize: ${datalake_windows_ec2_volume_size}
+      WindowsNodeGroupName: ${datalake_windows_asg_name}
+      LinuxNodeAutoScalingGroupDesiredCapacity: ${datalake_linux_ec2_asg_desired}
+      LinuxNodeAutoScalingGroupMaxSize: ${datalake_linux_ec2_asg_max}
+      LinuxNodeAutoScalingGroupMinSize: ${datalake_linux_ec2_asg_min}
+      LinuxNodeImageID: ${datalake_linux_ec2_image_id}
+      LinuxNodeInstanceType: ${datalake_linux_ec2_instance_type}
+      LinuxNodeVolumeSize: ${datalake_linux_ec2_volume_size}
+      LinuxNodeGroupName: ${datalake_linux_asg_name}
+      RedshiftClusterIdentifier: ${datalake_redshift_cluster_id}
+      RedshiftDBName: ${datalake_redshift_dbname}
+      RedshiftUsername: ${datalake_redshift_username}
+      RedshiftPassword: ${datalake_redshift_password}
+      RedshiftInstanceType: ${datalake_redshift_instance_type}
+      RedshiftClusterType: ${datalake_redshift_cluster_type}
+      RedshiftBackupRetentionPeriod: ${datalake_redshift_retention_period}
+      RedshiftNoOfNodes: ${datalake_redshift_no_of_nodes}
+      AlmisSFTPSSHKey: ${almis_sftp_public_ssh_key}
+      AlmisSFTPUserName: ${almis_sftp_username}
+      AccessSFTPSSHKey: ${access_sftp_public_ssh_key}
+      AccessSFTPUserName: ${access_sftp_username}
+      LambdaS3BucketName: ${il_lambda_s3_bucket_name}
+      DWHLoadLambdaMemorySizeMB: ${datalake_load_lambda_memory_mb}
+      DWHLoadLambdaTimeoutSeconds: ${datalake_load_lambda_timeout_secs}
+      DWHLoadLambdaS3FileName: ${datalake_load_lambda_filename}
+      DWHPsycopg2S3FileName: ${datalake_load_lambda_psycopg2_layer_filename}
+      DWHAlmisLambdaMemorySizeMB: ${datalake_almis_lambda_memory_mb}
+      DWHAlmisLambdaTimeoutSeconds: ${datalake_almis_lambda_timeout_secs}
+      DWHAlmisLambdaS3FileName: ${datalake_almis_lambda_filename}
+      ETLMambuUsername: ${etl_mambu_username}
+      ETLMambuPassword: ${etl_mambu_password}
+      ETLMambuSubdomain: ${etl_mambu_subdomain}
+      ETLMambuStartDate: ${etl_mambu_start_date}
+      ETLMambuLookBackWindow: ${etl_mambu_lookback_window}
+      ETLMambuUserAgent: ${etl_mambu_user_agent}
+      ETLMambuPageSize: ${etl_mambu_page_size}
+      DataExtractPipelineStartTime: ${data_extract_pipeline_start_time}
+      DataExtractPipelineLogFolder: ${data_extract_pipeline_log_folder}
+      CRRBucketARN: ${output ${datalake_dr_infra_stack_name}::S3BucketArn}
+      CRRRoleARN: ${output ${datalake_dr_infra_stack_name}::ReplicationRoleArn}
+      RedshiftConfigCustomResourceLambdaFileName: ${datalake_redshift_prod_config_lambda_filename}
+      DRRegion: ${drregion}
+      AppFlowIPRange1: ${appflow_ip_range_1}
+      AppFlowIPRange2: ${appflow_ip_range_2}
+      LambdaKeyArn: ${output ${main_infrastructure_stack_name}::LambdaKey}
+      SecretKey: ${output ${main_infrastructure_stack_name}::SecretKey}
+
+  - name: ${datalake_dr_post_infra_stack_name}
+    template_path: ${template_path}/templates/datalake-resources/data-resources-post-DR.yaml
+    region: ${drregion}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      CustomResourceLambdaExecutionRoleArn: ${output ${datalake_infra_stack_name}::CustomResourceLambdaExecutionRoleArn}
+
+  - name: ${datalake_infra_stack_name_part_02}
+    template_path: ${template_path}/templates/datalake-resources/data-resources-part2.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      RedshiftClusterIdentifier: ${datalake_redshift_cluster_id}
+      RedshiftBackupRetentionPeriod: ${datalake_redshift_retention_period}
+      LambdaS3BucketName: ${il_lambda_s3_bucket_name}
+      RedshiftConfigCustomResourceLambdaFileName: ${datalake_redshift_prod_config_lambda_filename}
+      CustomResourceLambdaExecutionRoleArn: ${output ${datalake_infra_stack_name}::CustomResourceLambdaExecutionRoleArn}
+      RedshiftKey: ${output ${datalake_dr_post_infra_stack_name}::RedshiftKey}
+      DRRegion: ${drregion}
+      DWHLoadLambdaFunctionArn: ${output ${datalake_infra_stack_name}::DWHLoadLambdaFunctionArn}
+      AlmisLambdaFunctionArn: ${output ${datalake_infra_stack_name}::AlmisLambdaFunctionArn}
+      RefreshDWHCron: ${dwh_refresh_cron}
+      PublicSubnets: ${output ${datalake_infra_stack_name}::PublicSubnetIds}
+      RedshiftClusterIdentifier: ${datalake_public_redshift_cluster_id}
+      RedshiftDBName: ${datalake_redshift_dbname}
+      RedshiftUsername: ${datalake_redshift_username}
+      RedshiftPassword: ${datalake_redshift_password}
+      RedshiftInstanceType: ${datalake_redshift_instance_type}
+      RedshiftClusterType: ${datalake_redshift_cluster_type}
+      RedshiftBackupRetentionPeriod: ${datalake_redshift_retention_period}
+      RedshiftNoOfNodes: ${datalake_redshift_no_of_nodes}
+      RedshiftSpectrumRoleArn: ${output ${datalake_infra_stack_name}::RedshiftSpectrumRoleArn}
+      ADBSecurityGroup: ${output ${datalake_infra_stack_name}::ADBSecurityGroup}
+      LambdaKeyArn: ${output ${main_infrastructure_stack_name}::LambdaKey}
+      SecretKey: ${output ${main_infrastructure_stack_name}::SecretKey}
+      Email: ${dwh_notification_email}
+
+  - name: ${datalake_infra_datapipeline_stack_name}
+    template_path: ${template_path}/templates/datalake-resources/data-resources-data-pipeline.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      LinuxNodeImageID: ${datalake_linux_ec2_image_id}
+      S3BucketName: ${output ${datalake_infra_stack_name}::S3Bucket}
+      DataPipelineSubnetId: ${output ${datalake_infra_stack_name}::PipelineSubnetId}
+      NodeInstanceProfile: ${output ${datalake_infra_stack_name}::NodeInstanceProfile}
+      NodeSecurityGroup: ${output ${datalake_infra_stack_name}::NodeSecurityGroup}
+      DataExtractPipelineStartTime: ${data_extract_pipeline_start_time}
+      DataExtractPipelineLogFolder: ${data_extract_pipeline_log_folder}
+      GlueServiceRoleArn: ${output ${datalake_infra_stack_name}::GlueServiceRoleArn}
+      RedshiftDBName: ${datalake_redshift_dbname}
+      Email: ${dwh_notification_email}
+
+  - name: ${datalake_infra_redshift_init_stack_name}
+    template_path: ${template_path}/templates/main-templates/xyz-db-init.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      LambdaPrefix: redshift
+      VPCID: ${output ${datalake_infra_stack_name}::VpcId}
+      PrivateSubnets: ${output ${datalake_infra_stack_name}::SubnetIds}
+      LambdaS3BucketName: ${il_lambda_s3_bucket_name}
+      ILSQLLambdaFileName: ${redshift_init_lambda_file_name}
+      SecretArn: ${output ${datalake_infra_stack_name_part_02}::DBPasswordSecretOutput}
+      ADBSecurityGroup: ${output ${datalake_infra_stack_name}::ADBSecurityGroup}
+      LambdaEnvRoleArn: ${output ${datalake_infra_stack_name}::RedshiftSpectrumRoleArn}
+      SecGroupPort: ${redshift_port}
+      LambdaKeyArn: ${output ${main_infrastructure_stack_name}::LambdaKey}
+
+  - name: ${cognito_stack_name}
+    template_path: ${template_path}/templates/service-resources/cognito-config.cfn.yaml
+    region: ${region}
+    profile: ${infrastructure_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      OSVPCID: ${output ${os_infra_stack_name}::VpcId}
+      UserPoolCognitoDomain: ${cognito_user_pool_domain_name}
+      ScopePoolCognitoDomain: ${cognito_scope_pool_domain_name}
+      CertificateArn: ${os_auth_cert_arn}
+      ScopePoolCertificateArn: ''
+      UserPoolTempPasswordValidityDays: ${cognito_user_pool_temp_password_validity}
+      ScopePoolTempPasswordValidityDays: ${cognito_scope_pool_temp_password_validity}
+      CallbackURLs: ${cognito_callback_urls}
+      SignOutUrls: ${cognito_signout_urls}
+      UserPoolRefreshTokenValidityTime: ${cognito_user_pool_refresh_token_validity_time}
+      UserPoolAccessTokenValidityTime: ${cognito_user_pool_access_token_validity_time}
+      UserPoolIdTokenValidityTime: ${cognito_user_pool_id_token_validity_time}
+      UserPoolRefreshTokenValidityTimeUnit: ${cognito_user_pool_refresh_token_validity_time_unit}
+      UserPoolAccessTokenValidityTimeUnit: ${cognito_user_pool_access_token_validity_time_unit}
+      UserPoolIdTokenValidityTimeUnit: ${cognito_user_pool_id_token_validity_time_unit}
+      ScopePoolRefreshTokenValidityDays: ${cognito_scope_pool_refresh_token_validity_days}
+      ScopePoolAccessTokenValidityHours: ${cognito_scope_pool_access_token_validity_hours}
+      ScopePoolIdTokenValidityHours: ${cognito_scope_pool_id_token_validity_hours}
+      LambdaS3BucketName: ${il_lambda_s3_bucket_name}
+      OSValidationLambdaS3FileName: ${cognito_os_validation_lambda_s3_file_name}
+      OSValidationLambdaMemorySizeMB: ${cognito_os_validation_lambda_max_memory}
+      OSValidationLambdaTimeoutSeconds: ${cognito_os_validation_lambda_timeout}
+      OSSignupLambdaS3FileName: ${cognito_os_signup_lambda_s3_file_name}
+      OSSignupLambdaMemorySizeMB: ${cognito_os_signup_lambda_max_memory}
+      OSSignupLambdaTimeoutSeconds: ${cognito_os_signup_lambda_timeout}
+      OSChangeUsernameLambdaS3FileName: ${cognito_os_changeusername_lambda_s3_file_name}
+      OSChangeUsernameLambdaMemorySizeMB: ${cognito_os_changeusername_lambda_max_memory}
+      OSChangeUsernameLambdaTimeoutSeconds: ${cognito_os_changeusername_lambda_timeout}
+      OSResetPasswordLambdaS3FileName: ${cognito_os_resetpwd_lambda_s3_file_name}
+      OSResetPasswordLambdaMemorySizeMB: ${cognito_os_resetpwd_lambda_max_memory}
+      OSResetPasswordLambdaTimeoutSeconds: ${cognito_os_resetpwd_lambda_timeout}
+      UserPoolAdvancedSecurityMode: ${cognito_user_pool_advanced_sec_mode}
+      ScopePoolAdvancedSecurityMode: ${cognito_scope_pool_advanced_sec_mode}
+      GetDomainAliasTargetLambdaS3FileName: ${cognito_get_domain_alias_target_lambda_s3_file_name}
+      WaitAliasTargetLambdaS3FileName: ${cognito_wait_alias_target_lambda_s3_file_name}
+      LambdaKeyArn: ${output ${main_infrastructure_stack_name}::LambdaKey}
+
+  - name: ${cognito_dns_stack_name}
+    template_path: ${template_path}/templates/service-resources/route53.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      AWSDNSName: ${output ${cognito_stack_name}::UserPoolDomainTarget}
+      BusinessDNSName: ${cognito_user_pool_domain_name}
+      HostedZoneName: ${os_hosted_zone_name}
+      AWSHostedZoneID: Z2FDTNDATAQYW2

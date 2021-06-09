@@ -1,0 +1,432 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Mambu API Proxy Implementation
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: Dev
+    Description: Prefix for Env Name
+  StageName:
+    Type: String
+    Default: dev
+    Description: Prefix for API Gateway stage name
+  MambuHostName:
+    Type: String
+    Description: Mambu Environment Hostname
+    Default: persistent.sandbox.mambu.com
+  AuthHeader:
+    Type: String
+    Description: Basic Auth Header to access mambu API
+    NoEcho: 'true'
+  MinimumCompressionSize:
+    Type: Number
+    Default: 10485760
+    Description: Minimum Compression Size for content encoding
+  CustomDomain:
+    Type: String
+    Default: dev.api.xyz.co
+    Description: Custom Domain for the API (This should be an existing API Custom Domain as this template doesn't create one)
+  BasePath:
+    Type: String
+    Default: mambu
+    Description: Base path for API
+  CertificateArn:
+    Type: String
+    Default: arn:aws:acm:us-east-1:213074200201:certificate/24b3ade0-e642-489a-94dd-d088050bd717
+    Description: Arn of an validated ACM certificate
+  NodeInstanceRole:
+    Type: String
+    Description: the node instance role
+
+Conditions:
+  HasCustomDomain: !Not [!Equals [!Ref CustomDomain, '']]
+  HasCertificateArn: !Not [!Equals [!Ref CertificateArn, '']]
+  HasCustomDomainEnabled: !And [Condition: HasCustomDomain, Condition: HasCertificateArn ]
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Mambu API Proxy Configuration
+        Parameters:
+          - EnvironmentPrefix
+          - StageName
+          - MambuHostName
+          - AuthHeader
+          - CustomDomain
+          - CertificateArn
+
+Resources:
+  usagePlanPremium:
+    DependsOn:
+    - Deployment
+    Type: 'AWS::ApiGateway::UsagePlan'
+    Properties:
+      ApiStages:
+        - ApiId: !Ref RestAPI
+          Stage: !Ref StageName
+      Description: Premium usage plan
+      # Quota:
+      #   Limit: 9999999
+      #   Period: DAY
+      Throttle:
+        BurstLimit: 1000000
+        RateLimit: 1000000
+      UsagePlanName: !Sub '${EnvironmentPrefix}-Mambu-Premium-Plan'
+
+  mambuAuthHeader:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Auth Header for Mambu Authentication
+      Name: !Sub '${EnvironmentPrefix}-Mambu-AuthHeader'
+      SecretString: !Ref AuthHeader
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Mambu-AuthHeader'
+
+  mambuAuthHeaderResourcePolicy:
+    Type: "AWS::SecretsManager::ResourcePolicy"
+    Properties:
+      SecretId: !Ref mambuAuthHeader
+      ResourcePolicy: 
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action: secretsmanager:*
+          Principal:
+            AWS: !Ref NodeInstanceRole
+          Resource: "*"
+
+            
+
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      CustomerId: PremiumUser
+      GenerateDistinctId: true
+      Name: !Sub '${EnvironmentPrefix}-Mambu-Premium-Plan-Key'
+      Enabled: true
+
+  usagePlanKey:
+    Type: 'AWS::ApiGateway::UsagePlanKey'
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref usagePlanPremium
+
+  LambdaBasicExecution:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Path: /
+
+  SecretsManagerPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: secret-manager-read
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: LambdaSecretManagerRead
+          Effect: Allow
+          Action:
+            - secretsmanager:GetRandomPassword
+            - secretsmanager:GetResourcePolicy
+            - secretsmanager:GetSecretValue
+            - secretsmanager:DescribeSecret
+            - secretsmanager:ListSecretVersionIds
+            - secretsmanager:ListSecrets
+          Resource:
+          - "*"
+      Roles:
+        - !Ref LambdaBasicExecution
+
+  lambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt proxyLambdaFn.Arn
+      Principal: apigateway.amazonaws.com
+
+  proxyLambdaFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs12.x
+      Role: !GetAtt LambdaBasicExecution.Arn
+      Handler: index.handler
+      Environment:
+        Variables:
+          mambu_host_name: !Ref MambuHostName
+          auth_header: !Ref mambuAuthHeader
+          base_path: !Sub '/${BasePath}'
+      Code:
+        ZipFile: |
+          const https = require('https');
+          const queryString = require('querystring');
+          let basePath = process.env.base_path
+          let hostname = process.env.mambu_host_name
+          let authHeader = process.env.auth_header
+          var AWS = require('aws-sdk'),
+            region = process.env.AWS_REGION,
+            secretName = authHeader;
+          // Create a Secrets Manager client
+          var client = new AWS.SecretsManager({
+            region: region
+          });
+          function getSecretValuePromise(context) {
+            return new Promise((resolve, reject) => {
+              client.getSecretValue({SecretId: secretName}, function(err, data) {
+                if (err) {
+                  console.log("Get Secret got an error: " + err.message);
+                  reject(err);
+                }
+                else {
+                  // Decrypts secret using the associated KMS CMK.
+                  // Depending on whether the secret is a string or binary, one of these fields will be populated.
+                  if ('SecretString' in data) {
+                    let secret = data.SecretString;
+                    resolve(secret);
+                  } else {
+                    let buff = new Buffer(data.SecretBinary, 'base64');
+                    let decodedBinarySecret = buff.toString('ascii');
+                    resolve(decodedBinarySecret);
+                  }
+                }
+              });
+            });
+          }
+          async function getSecretValue(context) {
+            try {
+              let http_promise = getSecretValuePromise(context);
+              let indices = await http_promise;
+              return indices;
+            } catch (error) {
+              console.log(error);
+              return "";
+            }
+          }
+          exports.handler = async function (event, context) {
+            authHeader = await getSecretValue(context);
+            let qs = queryString.stringify(event.queryStringParameters);
+            let path = '/api' + event.path + '?' + qs;
+            path = path.replace(basePath, "");
+            let method = event.httpMethod;
+            let options = {
+              hostname: hostname,
+              path: path,
+              method: method,
+              headers: {
+                'Authorization': authHeader
+              }
+            };
+            const promise = await new Promise(function(resolve, reject) {
+              const request = https.request( options, (res) => {
+                var finalData = '';
+                res.on('data', function(data) {
+                  finalData += data;
+                });
+                res.on('end', function(data) {
+                  resolve(finalData);
+                });
+              });
+              request.on('error', (e) => {
+                reject(e);
+              });
+              request.end();
+            });
+            const response = {
+              statusCode: 200,
+              body: promise,
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            };
+            return response;
+          };
+      Description: Invoke a function during api Invocation.
+
+  CustomDomainBasePathMapping:
+    Condition: HasCustomDomainEnabled
+    DependsOn:
+    - Deployment
+    Properties:
+      BasePath: !Ref BasePath
+      DomainName: !Ref CustomDomain
+      RestApiId: !Ref RestAPI
+      Stage: !Ref StageName
+    Type: AWS::ApiGateway::BasePathMapping
+
+  Deployment:
+    DependsOn:
+    - Methodproxy
+    Properties:
+      RestApiId:
+        Ref: RestAPI
+      StageName: !Ref StageName
+    Type: AWS::ApiGateway::Deployment
+
+  Methodproxy:
+    DependsOn:
+    - proxyLambdaFn
+    Properties:
+      RestApiId: !Ref RestAPI
+      ResourceId: !Ref ResourceRoot
+      ApiKeyRequired: true
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub >-
+          arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${proxyLambdaFn.Arn}/invocations
+    Type: AWS::ApiGateway::Method
+
+  ResourceRoot:
+    DependsOn:
+    - RestAPI
+    Properties:
+      ParentId: !GetAtt RestAPI.RootResourceId
+      PathPart: '{proxy+}'
+      RestApiId: !Ref RestAPI
+    Type: AWS::ApiGateway::Resource
+
+  RestAPI:
+    Properties:
+      ApiKeySourceType: HEADER
+      MinimumCompressionSize: !Ref MinimumCompressionSize
+      EndpointConfiguration:
+        Types:
+        - REGIONAL
+      Name:
+        Ref: AWS::StackName
+      Policy:
+        Statement:
+        - Action:
+          - execute-api:Invoke
+          Effect: Allow
+          Principal: '*'
+          Resource:
+          - '*'
+        Version: 2012-10-17
+    Type: AWS::ApiGateway::RestApi
+
+  WAFAcl:
+    Properties:
+      DefaultAction:
+        Allow: {}
+      Description: This is an example WebACL
+      Name:
+        Ref: AWS::StackName
+      Rules:
+      - Name: RuleWithAWSManagedRules
+        OverrideAction:
+          Count: {}
+        Priority: 0
+        Statement:
+          ManagedRuleGroupStatement:
+            Name: AWSManagedRulesCommonRuleSet
+            VendorName: AWS
+        VisibilityConfig:
+          CloudWatchMetricsEnabled: true
+          MetricName: RuleWithAWSManagedRulesMetric
+          SampledRequestsEnabled: true
+      - Name: RuleWithAWSManagedLinuxnRules
+        OverrideAction:
+          Count: {}
+        Priority: 4
+        Statement:
+          ManagedRuleGroupStatement:
+            Name: AWSManagedRulesLinuxRuleSet
+            VendorName: AWS
+        VisibilityConfig:
+          CloudWatchMetricsEnabled: true
+          MetricName: RuleWithAWSManagedLinuxRulesMetric
+          SampledRequestsEnabled: true
+      - Name: RuleWithAWSManagedIPReputationRules
+        OverrideAction:
+          Count: {}
+        Priority: 5
+        Statement:
+          ManagedRuleGroupStatement:
+            Name: AWSManagedRulesAmazonIpReputationList
+            VendorName: AWS
+        VisibilityConfig:
+          CloudWatchMetricsEnabled: true
+          MetricName: RuleWithAWSManagedIPReputationRulesMetric
+          SampledRequestsEnabled: true
+      - Name: RuleWithAWSManagedAdminProtectionRules
+        OverrideAction:
+          Count: {}
+        Priority: 6
+        Statement:
+          ManagedRuleGroupStatement:
+            Name: AWSManagedRulesAdminProtectionRuleSet
+            VendorName: AWS
+        VisibilityConfig:
+          CloudWatchMetricsEnabled: true
+          MetricName: RuleWithAWSManagedAdminProtectionRulesMetric
+          SampledRequestsEnabled: true
+      - Name: RuleWithAWSManagedKnownBadInputsRules
+        OverrideAction:
+          Count: {}
+        Priority: 2
+        Statement:
+          ManagedRuleGroupStatement:
+            Name: AWSManagedRulesKnownBadInputsRuleSet
+            VendorName: AWS
+        VisibilityConfig:
+          CloudWatchMetricsEnabled: true
+          MetricName: RuleWithAWSManagedKnownBadInputsRulesMetric
+          SampledRequestsEnabled: true
+      - Name: RuleWithAWSManagedSQLInjectInputsRules
+        OverrideAction:
+          Count: {}
+        Priority: 3
+        Statement:
+          ManagedRuleGroupStatement:
+            Name: AWSManagedRulesSQLiRuleSet
+            VendorName: AWS
+        VisibilityConfig:
+          CloudWatchMetricsEnabled: true
+          MetricName: RuleWithAWSManagedSQLInjectInputsRulesMetric
+          SampledRequestsEnabled: true
+      - Action:
+          Block: {}
+        Name: BlockXssAttack
+        Priority: 1
+        Statement:
+          XssMatchStatement:
+            FieldToMatch:
+              AllQueryArguments: {}
+            TextTransformations:
+            - Priority: 1
+              Type: NONE
+        VisibilityConfig:
+          CloudWatchMetricsEnabled: true
+          MetricName: BlockXssAttackMetric
+          SampledRequestsEnabled: true
+      Scope: REGIONAL
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        MetricName:
+          Fn::Sub: ${AWS::StackName}WebACLMetric
+        SampledRequestsEnabled: true
+    Type: AWS::WAFv2::WebACL
+
+  WAFAssociation:
+    DependsOn:
+    - Deployment
+    - WAFAcl
+    Properties:
+      ResourceArn: !Sub "arn:aws:apigateway:${AWS::Region}::/restapis/${RestAPI}/stages/${StageName}"
+      WebACLArn: !GetAtt WAFAcl.Arn
+    Type: AWS::WAFv2::WebACLAssociation

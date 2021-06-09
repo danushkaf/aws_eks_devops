@@ -1,0 +1,191 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: API health check related AWS resources.
+Parameters:
+  EnvironmentPrefix:
+    Type: String 
+    AllowedValues:
+      - dev
+      - qa
+      - uat
+      - prod
+       
+  LoadBalancerBaseUrl:
+    Type: String 
+    Default: http://qa-in-LoadB-4LIRU2JT57LC-43b1a1678e7b0e54.elb.us-east-1.amazonaws.com/
+    Description: The base url of the load balancer. Specify as per environment.
+  S3BucketHavingHealthCheckPackage:
+    Type: String
+    Default: xyz-lambda-packages
+    Description: Input the ARN of the S3 bucket which has the lambda package for health check endpoint
+  S3KeyForHealthCheckPackage:
+    Type: String
+    Default: healthCheck.zip
+    Description: Input the S3 object key of the zip file which has the lambda package for health check endpoint.
+  ArnPolicyLambdaBasicExecution:
+    Type: String
+    Default: arn:aws:iam::213074200201:policy/service-role/AWSLambdaBasicExecutionRole-eccd25bd-7037-4993-ad4a-fb8d135d1974
+    Description: The Arn of the policy for lambda basic execution
+  NodeSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Default: sg-0aac6d2a03c11b71e
+    Description: the node security group where Kube nodes are running
+  PrivateSubnetsToAssociate:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: The subnets Ids to associate to this lambda function
+  DomainName:
+    Type: String
+    Default: qa.api.xyz.co
+    Description: Specify the domain name to use for the health-check API
+
+Resources:
+    IAMRole:
+        Type: "AWS::IAM::Role"
+        Properties:
+            Path: "/service-role/"
+            RoleName: !Sub "${EnvironmentPrefix}-health-check-execution-role"
+            AssumeRolePolicyDocument:  
+              Version: 2012-10-17
+              Statement:
+              - Effect: Allow
+                Principal:
+                  Service: lambda.amazonaws.com
+                Action: sts:AssumeRole
+            MaxSessionDuration: 3600
+            ManagedPolicyArns: 
+              - !Ref ArnPolicyLambdaBasicExecution
+
+    LambdaFunction:
+        Type: "AWS::Lambda::Function"
+        Properties:
+            Description: "Lambda function for Health check endpoint"
+            Environment: 
+                Variables: 
+                    "Base_Url": !Ref LoadBalancerBaseUrl
+            FunctionName: !Sub "${EnvironmentPrefix}-health-check"
+            Handler: "index.handler"
+            Code: 
+                S3Bucket: !Ref S3BucketHavingHealthCheckPackage
+                S3Key: !Ref S3KeyForHealthCheckPackage
+            MemorySize: 128
+            Role: !GetAtt IAMRole.Arn
+            Runtime: "nodejs12.x"
+            Timeout: 3
+            TracingConfig: 
+                Mode: "PassThrough"
+            VpcConfig: 
+                SubnetIds: !Ref PrivateSubnetsToAssociate
+                SecurityGroupIds: 
+                  - !Ref NodeSecurityGroupId
+
+    ApiGatewayRestApi:
+        Type: "AWS::ApiGateway::RestApi"
+        Properties:
+            Name: !Sub "${EnvironmentPrefix}-HealthCheck-API"
+            Description: "Health check of all microservices"
+            ApiKeySourceType: "HEADER"
+            EndpointConfiguration: 
+                Types: 
+                  - "REGIONAL"
+
+    ApiGatewayStage:
+        Type: "AWS::ApiGateway::Stage"
+        Properties:
+            StageName: !Sub "${EnvironmentPrefix}"
+            DeploymentId: !Ref ApiGatewayDeployment
+            RestApiId: !Ref ApiGatewayRestApi
+            CacheClusterEnabled: false
+            TracingEnabled: false
+
+    ApiGatewayResource:
+        Type: "AWS::ApiGateway::Resource"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            PathPart: "healthcheck"
+            ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+
+    ApiGatewayModel:
+        Type: "AWS::ApiGateway::Model"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            Name: !Sub "${EnvironmentPrefix}HealthCheckEmpty"
+            Description: "This is a default empty schema model"
+            Schema: |
+                {
+                  "$schema": "http://json-schema.org/draft-04/schema#",
+                  "title" : "Empty Schema",
+                  "type" : "object"
+                }
+            ContentType: "application/json"
+
+    ApiGatewayModel2:
+        Type: "AWS::ApiGateway::Model"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            Name: !Sub "${EnvironmentPrefix}HealthCheckError"
+            Description: "This is a default error schema model"
+            Schema: |
+                {
+                  "$schema" : "http://json-schema.org/draft-04/schema#",
+                  "title" : "Error Schema",
+                  "type" : "object",
+                  "properties" : {
+                    "message" : { "type" : "string" }
+                  }
+                }
+            ContentType: "application/json"            
+
+    ApiGatewayMethod:
+        Type: "AWS::ApiGateway::Method"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            ResourceId: !Ref ApiGatewayResource
+            HttpMethod: "GET"
+            AuthorizationType: "NONE"
+            ApiKeyRequired: false
+            RequestParameters: {}
+            MethodResponses: 
+              - 
+                ResponseModels: 
+                    "application/json": !Ref ApiGatewayModel
+                StatusCode: "200"
+            Integration: 
+                CacheNamespace: !Ref ApiGatewayResource
+                ContentHandling: "CONVERT_TO_TEXT"
+                IntegrationHttpMethod: "POST"
+                IntegrationResponses: 
+                  - 
+                    ResponseTemplates: {}
+                    StatusCode: "200"
+                PassthroughBehavior: "WHEN_NO_MATCH"
+                TimeoutInMillis: 29000
+                Type: "AWS"
+                Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}/invocations"
+
+    ApiGatewayDeployment:
+        Type: "AWS::ApiGateway::Deployment"
+        DependsOn:
+          - ApiGatewayMethod
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+
+    DomainBasePathMapping:
+      Type: "AWS::ApiGateway::BasePathMapping"
+      DependsOn:
+          - ApiGatewayDeployment
+      Properties:
+        BasePath: "api"
+        DomainName: !Ref DomainName
+        RestApiId: !Ref ApiGatewayRestApi
+        Stage: !Ref ApiGatewayStage
+    
+
+    #allow permission for this lambda to be invoked from api gateway
+    LambdaPermission:
+        DependsOn:
+          - ApiGatewayRestApi
+        Type: "AWS::Lambda::Permission"
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaFunction.Arn
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/GET/healthcheck"

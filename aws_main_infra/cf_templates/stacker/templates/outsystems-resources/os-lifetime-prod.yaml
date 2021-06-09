@@ -1,0 +1,1071 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: OutSystems Lifetime Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: os-lifetime
+    Description: Prefix for Env Name
+  KeyName:
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Default: outsystems
+  NodeAutoScalingGroupDesiredCapacity:
+    Type: Number
+    Default: 1
+    Description: Desired capacity of Node Group ASG.
+  NodeAutoScalingGroupMaxSize:
+    Type: Number
+    Default: 1
+    Description: Maximum size of Node Group ASG. Set to at least 1 greater than NodeAutoScalingGroupDesiredCapacity.
+  NodeAutoScalingGroupMinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum size of Node Group ASG.
+  PolicyTargetValue:
+    Type: String
+    Default: 90
+  NodeGroupName:
+    Type: String
+    Default: os-lifetime
+    Description: Unique identifier for the Node Group.
+  NodeImageId:
+    Type: String
+    Default: ami-0d114cdd278ad2398
+    Description: Specify image ID for OS instances
+  NodeInstanceType:
+    Type: String
+    Default: t3a.xlarge
+    AllowedValues:
+      - a1.medium
+      - a1.large
+      - a1.xlarge
+      - a1.2xlarge
+      - a1.4xlarge
+      - c1.medium
+      - c1.xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - c5.12xlarge
+      - c5.18xlarge
+      - c5.24xlarge
+      - c5.metal
+      - c5d.large
+      - c5d.xlarge
+      - c5d.2xlarge
+      - c5d.4xlarge
+      - c5d.9xlarge
+      - c5d.18xlarge
+      - c5n.large
+      - c5n.xlarge
+      - c5n.2xlarge
+      - c5n.4xlarge
+      - c5n.9xlarge
+      - c5n.18xlarge
+      - cc2.8xlarge
+      - cr1.8xlarge
+      - d2.xlarge
+      - d2.2xlarge
+      - d2.4xlarge
+      - d2.8xlarge
+      - f1.2xlarge
+      - f1.4xlarge
+      - f1.16xlarge
+      - g2.2xlarge
+      - g2.8xlarge
+      - g3s.xlarge
+      - g3.4xlarge
+      - g3.8xlarge
+      - g3.16xlarge
+      - h1.2xlarge
+      - h1.4xlarge
+      - h1.8xlarge
+      - h1.16xlarge
+      - hs1.8xlarge
+      - i2.xlarge
+      - i2.2xlarge
+      - i2.4xlarge
+      - i2.8xlarge
+      - i3.large
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - i3.16xlarge
+      - i3.metal
+      - i3en.large
+      - i3en.xlarge
+      - i3en.2xlarge
+      - i3en.3xlarge
+      - i3en.6xlarge
+      - i3en.12xlarge
+      - i3en.24xlarge
+      - m1.small
+      - m1.medium
+      - m1.large
+      - m1.xlarge
+      - m2.xlarge
+      - m2.2xlarge
+      - m2.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m4.16xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.8xlarge
+      - m5.12xlarge
+      - m5.16xlarge
+      - m5.24xlarge
+      - m5.metal
+      - m5a.large
+      - m5a.xlarge
+      - m5a.2xlarge
+      - m5a.4xlarge
+      - m5a.8xlarge
+      - m5a.12xlarge
+      - m5a.16xlarge
+      - m5a.24xlarge
+      - m5ad.large
+      - m5ad.xlarge
+      - m5ad.2xlarge
+      - m5ad.4xlarge
+      - m5ad.12xlarge
+      - m5ad.24xlarge
+      - m5d.large
+      - m5d.xlarge
+      - m5d.2xlarge
+      - m5d.4xlarge
+      - m5d.8xlarge
+      - m5d.12xlarge
+      - m5d.16xlarge
+      - m5d.24xlarge
+      - m5d.metal
+      - p2.xlarge
+      - p2.8xlarge
+      - p2.16xlarge
+      - p3.2xlarge
+      - p3.8xlarge
+      - p3.16xlarge
+      - p3dn.24xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.8xlarge
+      - r5.12xlarge
+      - r5.16xlarge
+      - r5.24xlarge
+      - r5.metal
+      - r5a.large
+      - r5a.xlarge
+      - r5a.2xlarge
+      - r5a.4xlarge
+      - r5a.8xlarge
+      - r5a.12xlarge
+      - r5a.16xlarge
+      - r5a.24xlarge
+      - r5ad.large
+      - r5ad.xlarge
+      - r5ad.2xlarge
+      - r5ad.4xlarge
+      - r5ad.12xlarge
+      - r5ad.24xlarge
+      - r5d.large
+      - r5d.xlarge
+      - r5d.2xlarge
+      - r5d.4xlarge
+      - r5d.8xlarge
+      - r5d.12xlarge
+      - r5d.16xlarge
+      - r5d.24xlarge
+      - r5d.metal
+      - t1.micro
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - t3a.nano
+      - t3a.micro
+      - t3a.small
+      - t3a.medium
+      - t3a.large
+      - t3a.xlarge
+      - t3a.2xlarge
+      - u-6tb1.metal
+      - u-9tb1.metal
+      - u-12tb1.metal
+      - x1.16xlarge
+      - x1.32xlarge
+      - x1e.xlarge
+      - x1e.2xlarge
+      - x1e.4xlarge
+      - x1e.8xlarge
+      - x1e.16xlarge
+      - x1e.32xlarge
+      - z1d.large
+      - z1d.xlarge
+      - z1d.2xlarge
+      - z1d.3xlarge
+      - z1d.6xlarge
+      - z1d.12xlarge
+      - z1d.metal
+    ConstraintDescription: Must be a valid EC2 instance type
+    Description: EC2 instance type for the node instances
+  NodeVolumeSize:
+    Type: Number
+    Default: 150
+    Description: Node volume size
+  SecondNodeVolumeSize:
+    Type: Number
+    Default: 100
+    Description: Second Node volume size
+  DatabaseUsername:
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 1 to 16 alphanumeric characters.
+    Description: The database admin account user name, between 1 to 16 alphanumeric characters.
+    MaxLength: '16'
+    MinLength: '1'
+    Type: String
+  DatabasePassword:
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+    Description: The database admin account password, between 8 to 41 alphanumeric characters.
+    MaxLength: '41'
+    MinLength: '8'
+    NoEcho: 'true'
+    Type: String
+  OutSystemsHostname:
+    Type: String
+    Default: lifetime.portal.xyz.com
+    Description: Public Hostname for OutSystems
+  OutSystemsAdminDBUsername:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Admin DB Username to be used."
+  OutSystemsAdminDBPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Admin DB Password to be used."
+  OutSystemsRuntimeDBAdminUsername:
+    Type: String
+    Description: "OutSystems RuntimeDBAdmin Username to be used."
+    MaxLength: '16'
+    MinLength: '1'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsRuntimeDBAdminPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems RuntimeDBAdmin Password to be used."
+    MaxLength: '41'
+    MinLength: '8'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsRuntimeLoggingDBAdminUsername:
+    Type: String
+    Description: "OutSystems RuntimeLoggingDBAdmin Username to be used."
+    MaxLength: '16'
+    MinLength: '1'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsRuntimeLoggingDBAdminPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems RuntimeLoggingDBAdmin Password to be used."
+    MaxLength: '41'
+    MinLength: '8'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsSessionDBAdminUsername:
+    Type: String
+    Description: "OutSystems SessionDBAdmin Username to be used."
+    MaxLength: '16'
+    MinLength: '1'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsSessionDBAdminPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems SessionDBAdmin Password to be used."
+    MaxLength: '41'
+    MinLength: '8'
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+  OutSystemsPlatformPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Platform Password to be used."
+  OutSystemsServicePassword:
+    Type: String
+    NoEcho: 'true'
+    Description: "OutSystems Service Password to be used."
+  OutSystemsCatalogDatabaseName:
+    AllowedPattern: "[a-zA-Z0-9-_]+"
+    ConstraintDescription: must be between 4 to 30 alphanumeric characters.
+    Description: Database name for outsystems catalog database.
+    Default: CATALOGDEV
+    MaxLength: '30'
+    MinLength: '4'
+    Type: String
+  OutSystemsSessionDatabaseName:
+    AllowedPattern: "[a-zA-Z0-9-_]+"
+    ConstraintDescription: must be between 4 to 30 alphanumeric characters.
+    Description: Database name for outsystems session database.
+    Default: xyz_sessiondev
+    MaxLength: '30'
+    MinLength: '4'
+    Type: String
+    Description: Prefix for Env Name
+  NodeSecurityGroup:
+    Type: String
+    Description: Security Group ID
+  VPCID:
+    Type: String
+    Description: VPC ID
+  ALBSecurityGroup:
+    Type: String
+    Description: ALB Security Group ID
+  Certificate:
+    Type: String
+    Description: Certificate Arn
+  NodeInstanceProfile:
+    Type: String
+    Description: Node Instance Profile Arn
+  DatabasePrimaryInstanceEndpointAddress:
+    Type: String
+    Description: Database Primary Instance EndpointAddress.
+  PrivateSubnets:
+    Type: CommaDelimitedList
+    Description: Private subnet id list.
+  PublicSubnets:
+    Type: CommaDelimitedList
+    Description: Public subnet id list.
+  SecretKey:
+    Type: String
+    Description: Secret Key ID.
+
+Conditions:
+  IsProdEnv: !Equals [!Ref EnvironmentPrefix, 'prod']
+
+Resources:
+
+  OSPasswordSecret:
+    Condition: IsProdEnv
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Description: "This is a Secrets Manager secret for OS Lifetime Passwords"
+      Name: !Sub '${EnvironmentPrefix}-OS-Lifetime-Credentials'
+      KmsKeyId: !Ref SecretKey
+      SecretString: !Sub '{"OutSystemsAdminDBUsername":"${OutSystemsAdminDBUsername}","OutSystemsAdminDBPassword":"${OutSystemsAdminDBPassword}","OutSystemsAdminDBPassword":"${OutSystemsAdminDBPassword}","OutSystemsRuntimeDBAdminUsername":"${OutSystemsRuntimeDBAdminUsername}","OutSystemsRuntimeDBAdminPassword":"${OutSystemsRuntimeDBAdminPassword}","OutSystemsRuntimeLoggingDBAdminUsername":"${OutSystemsRuntimeLoggingDBAdminUsername}","OutSystemsRuntimeLoggingDBAdminPassword":"${OutSystemsRuntimeLoggingDBAdminPassword}","OutSystemsSessionDBAdminUsername":"${OutSystemsSessionDBAdminUsername}","OutSystemsSessionDBAdminPassword":"${OutSystemsSessionDBAdminPassword}","OutSystemsPlatformPassword":"${OutSystemsPlatformPassword}","OutSystemsServicePassword":"${OutSystemsServicePassword}","OutSystemsCatalogDatabaseName":"${OutSystemsCatalogDatabaseName}","OutSystemsSessionDatabaseName":"${OutSystemsSessionDatabaseName}"}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-OS-Lifetime-DB-Password'
+
+  NodeLaunchTemplate:
+    Type: "AWS::EC2::LaunchTemplate"
+    Properties:
+      LaunchTemplateName: !Sub ${EnvironmentPrefix}-${NodeGroupName}-Lifetime-Server-Template
+      LaunchTemplateData:
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              DeleteOnTermination: true
+              Encrypted: true
+              VolumeSize: !Ref NodeVolumeSize
+              VolumeType: gp2
+          - DeviceName: xvdd
+            Ebs:
+              DeleteOnTermination: true
+              Encrypted: true
+              VolumeSize: !Ref SecondNodeVolumeSize
+              VolumeType: gp2
+        IamInstanceProfile:
+          Arn: !Ref NodeInstanceProfile
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            Groups:
+              - !Ref NodeSecurityGroup
+            DeleteOnTermination: true
+        ImageId: !Ref NodeImageId
+        InstanceType: !Ref NodeInstanceType
+        KeyName: !Ref KeyName
+        UserData:
+          Fn::Base64: !Sub |
+            <powershell>
+            Import-Module c:\ProgramData\Amazon\EC2-Windows\Launch\Module\Ec2Launch.psm1 ; Add-Routes
+            if (Test-Path C:\\Users\\Administrator\\Documents\\installed.txt -PathType Leaf) {
+              WWrite-Host "Installation is done on this AMI. So doing necessary changes"
+              cp "C:\\Program Files\\OutSystems\\Platform Server\\private.key.back" "C:\\Program Files\\OutSystems\\Platform Server\\private.key"
+              $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT –Uri http://169.254.169.254/latest/api/token
+              $privateIp = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri http://169.254.169.254/latest/meta-data/local-ipv4
+              $hostname = hostname
+              $hostname_lower = $hostname.ToLower()
+              [xml]$xmlDoc = Get-Content "C:\\Users\\Administrator\\Documents\\server.hsconf"
+              $xmlDoc.EnvironmentConfiguration.NetworkConfiguration.OutgoingIPAddress = "$privateIp"
+              $xmlDoc.EnvironmentConfiguration.CacheInvalidationConfiguration.ServiceHost = "$privateIp"
+              $xmlDoc.EnvironmentConfiguration.ServiceConfiguration.CompilerServerHostname = "$privateIp"
+              $xmlDoc.Save("C:\\Users\\Administrator\\Documents\\server.hsconf")
+              cp "C:\\Users\\Administrator\\Documents\\server.hsconf" "C:\\Program Files\\OutSystems\\Platform Server"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "UPDATE ossys_Server SET IP_ADDRESS = '$privateIp' WHERE NAME = '$hostname_lower'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "UPDATE ossys_Parameter SET VAL = '$privateIp' WHERE HOST = '$hostname' AND NAME = 'OutSystems.HubEdition.OutboundIPAddress'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_parameter where name = 'ClientApplicationToken'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_parameter where name = 'privateKeyValidation'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_Parameter where name = 'OutSystems.HubEdition.MobileLogin_AuthenticationHMACKey'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_Parameter where name = 'OutSystems.HubEdition.MobileLogin_AuthenticationEncryptKey'"
+              Restart-Service AmazonSSMAgent
+              & 'C:\\Program Files\\OutSystems\\Platform Server\\ConfigurationTool.com' /SetupInstall ${OutSystemsAdminDBUsername} ${OutSystemsAdminDBPassword} ${OutSystemsAdminDBUsername} ${OutSystemsAdminDBPassword} /SetPlatformServerAdminPassword ${OutSystemsPlatformPassword} /RebuildSession ${OutSystemsSessionDBAdminUsername} ${OutSystemsSessionDBAdminPassword} /CreateUpgradeCacheInvalidationService /SCInstall
+            } else {
+              $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT –Uri http://169.254.169.254/latest/api/token
+              $privateIp = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri http://169.254.169.254/latest/meta-data/local-ipv4
+              $values = [ordered]@{ OSADMINPLACEHOLDER = "${OutSystemsAdminDBUsername}"; OSADMINPASSWORDPLACEHOLDER = "${OutSystemsAdminDBPassword}"; OSSESSIONADMINPLACEHOLDER = "${OutSystemsSessionDBAdminUsername}"; OSSESSIONADMINPASSWORDPLACEHOLDER = "${OutSystemsSessionDBAdminPassword}"; OSRUNTIMEADMINPLACEHOLDER = "${OutSystemsRuntimeDBAdminUsername}"; OSRUNTIMEADMINPASSWORDPLACEHOLDER = "${OutSystemsRuntimeDBAdminUsername}"; OSRUNTIMELOGADMINPLACEHOLDER = "${OutSystemsRuntimeLoggingDBAdminUsername}"; OSRUNTIMELOGADMINPASSWORDPLACEHOLDER = "${OutSystemsRuntimeLoggingDBAdminPassword}"; RDSENDPOINTPLACEHOLDER = "${DatabasePrimaryInstanceEndpointAddress}"; CATALOGDBPLACEHOLDER = "${OutSystemsCatalogDatabaseName}"; SESSIONDBPLACEHOLDER = "${OutSystemsSessionDatabaseName}"; SERVICEPASSWORDPLACEHOLDER = "${OutSystemsServicePassword}"; EC2LOCALIP = $privateIp }
+              foreach ($h in $values.Keys) {
+                (Get-Content -path "C:\\Users\\Administrator\\Documents\\platform_script.sql" -Raw) -replace $h, $($values.Item($h)) | Set-Content -Path "C:\\Users\\Administrator\\Documents\\platform_script.sql"
+                (Get-Content -path "C:\\Users\\Administrator\\Documents\\server.hsconf" -Raw) -replace $h, $($values.Item($h)) | Set-Content -Path "C:\\Users\\Administrator\\Documents\\server.hsconf"
+              }
+              Write-Host "Starting Database Script"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${DatabaseUsername} -P ${DatabasePassword} -i "C:\\Users\\Administrator\\Documents\\platform_script.sql"
+              Write-Host "Finished Database Script"
+              cp "C:\\Users\\Administrator\\Documents\\server.hsconf" "C:\\Program Files\\OutSystems\\Platform Server"
+              Write-Host "Server configuration copied. Running configuration tool"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_parameter where name = 'ClientApplicationToken'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_parameter where name = 'privateKeyValidation'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_Parameter where name = 'OutSystems.HubEdition.MobileLogin_AuthenticationHMACKey'"
+              SQLCMD.EXE -S ${DatabasePrimaryInstanceEndpointAddress} -U ${OutSystemsAdminDBUsername} -P ${OutSystemsAdminDBPassword} -d ${OutSystemsCatalogDatabaseName} -Q "delete from ossys_Parameter where name = 'OutSystems.HubEdition.MobileLogin_AuthenticationEncryptKey'"
+              Restart-Service AmazonSSMAgent
+              & 'C:\\Program Files\\OutSystems\\Platform Server\\ConfigurationTool.com' /SetupInstall ${OutSystemsAdminDBUsername} ${OutSystemsAdminDBPassword} ${OutSystemsAdminDBUsername} ${OutSystemsAdminDBPassword} /SetPlatformServerAdminPassword ${OutSystemsPlatformPassword} /RebuildSession ${OutSystemsSessionDBAdminUsername} ${OutSystemsSessionDBAdminPassword} /CreateUpgradeCacheInvalidationService /SCInstall
+              Write-Host "Starting looking for DNS name"
+              Do
+              {
+                $resolveDomain = (Resolve-DnsName -Name dev.portal.xyz.com -Type A | Where-Object { $_.Strings -ne '' } | Measure-Object).Count
+                If ($resolveDomain -eq 0) {
+                  Write-Host "Didn't find any records. Sleeping for 5 minutes and trying again"
+                  Start-Sleep -Seconds 300
+                }
+                Else {
+                  Write-Host "Found a record for ${OutSystemsHostname}, Continuing on..."
+                  break
+                }
+              } While ($true)
+              Write-Host "Starting publishing the site"
+              & 'C:\\Program Files\\Common Files\\OutSystems\\11.0\\OSPTool.com' /Publish "C:\\Program Files\\OutSystems\\Platform Server\\System_Components.osp" ${OutSystemsHostname} Admin ${OutSystemsPlatformPassword}
+              cp "C:\\Program Files\\OutSystems\\Platform Server\\private.key" "C:\\Program Files\\OutSystems\\Platform Server\\private.key.back"
+              echo installed  > C:\\Users\\Administrator\\Documents\\installed.txt
+            }
+            </powershell>
+            <persist>true</persist>
+
+  NodeGroup:
+    Condition: IsProdEnv
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      DesiredCapacity: !Ref NodeAutoScalingGroupDesiredCapacity
+      LaunchTemplate:
+        LaunchTemplateId: !Ref NodeLaunchTemplate
+        Version: !GetAtt NodeLaunchTemplate.LatestVersionNumber
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      MaxSize: !Ref NodeAutoScalingGroupMaxSize
+      MinSize: !Ref NodeAutoScalingGroupMinSize
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 120
+      Tags:
+        - Key: Name
+          PropagateAtLaunch: "true"
+          Value: !Sub ${EnvironmentPrefix}-${NodeGroupName}-FrontEnd-Server-Node
+        - Key: 'Patch Group'
+          PropagateAtLaunch: "true"
+          Value: Windows
+      VPCZoneIdentifier: !Ref PrivateSubnets
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: "1"
+        MinInstancesInService: !Ref NodeAutoScalingGroupDesiredCapacity
+        PauseTime: PT5M
+
+  CPUPolicy:
+    Condition: IsProdEnv
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref NodeGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: !Ref PolicyTargetValue
+
+  OSLoadBalancer:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Subnets: !Ref PublicSubnets
+
+  TargetGroup:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      TargetType: instance
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTPS
+      HealthCheckPath: /
+      HealthCheckPort: 443
+      HealthCheckIntervalSeconds: 125
+      HealthCheckTimeoutSeconds: 110
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 10
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 600
+        - Key: stickiness.enabled
+          Value: true
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: slow_start.duration_seconds
+          Value: 600
+      Matcher:
+        HttpCode: "200,302,403,404"
+      Port: 443
+      Protocol: HTTPS
+      VpcId: !Ref VPCID
+
+  HTTPListener:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - RedirectConfig:
+            Host: "#{host}"
+            Path: "/#{path}"
+            Port: 443
+            Protocol: "HTTPS"
+            Query: "#{query}"
+            StatusCode: HTTP_301
+          Type: redirect
+      LoadBalancerArn: !Ref OSLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  OSHTTPSListenerRule1:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /lifetime
+              - /lifetime/*
+              - /LifeTimeSDK
+              - /LifeTimeSDK/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 5
+
+  OSHTTPSListenerRule2:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /LifeTimeAnalytics
+              - /LifeTimeAnalytics/*
+              - /servicecenter
+              - /servicecenter/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 6
+
+  OSHTTPSListenerRule3:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ServiceCenter
+              - /ServiceCenter/*
+              - /Users
+              - /Users/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 7
+
+  OSHTTPSListenerExtraRule1:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /LifeTimeCore
+              - /LifeTimeCore/*
+              - /LifeTimeAudit
+              - /LifeTimeAudit/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 10
+
+  OSHTTPSListenerExtraRule2:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /LifeTimeEngine
+              - /LifeTimeEngine/*
+              - /LifeTimeMonitoring
+              - /LifeTimeMonitoring/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 11
+
+  OSHTTPSListenerExtraRule3:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /LifeTimeServices
+              - /LifeTimeServices/*
+              - /LTDeployments
+              - /LTDeployments/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 12
+
+  OSHTTPSListenerExtraRule4:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /LTEnvironments
+              - /LTEnvironments/*
+              - /LTResources
+              - /LTResources/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 13
+
+  OSHTTPSListenerExtraRule5:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /LTUserManagement
+              - /LTUserManagement/*
+              - /LTVersioning
+              - /LTVersioning/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 14
+
+  OSHTTPSListenerExtraRule6:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /PerformanceMonitor
+              - /PerformanceMonitor/*
+              - /PerformanceProbe
+              - /PerformanceProbe/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 15
+
+  OSHTTPSListenerExtraRule7:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ADAuthProvider
+              - /ADAuthProvider/*
+              - /appfeedbackapi
+              - /appfeedbackapi/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 16
+
+  OSHTTPSListenerExtraRule8:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /AppFeedbackPlugin
+              - /AppFeedbackPlugin/*
+              - /ChartingServicesCore
+              - /ChartingServicesCore/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 17
+
+  OSHTTPSListenerExtraRule9:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /Charts
+              - /Charts/*
+              - /CustomHandlers
+              - /CustomHandlers/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 18
+
+  OSHTTPSListenerExtraRule10:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /DeviceDatabase
+              - /DeviceDatabase/*
+              - /ECT_Provider
+              - /ECT_Provider/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 19
+
+  OSHTTPSListenerExtraRule11:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /EmptyModuleWeb
+              - /EmptyModuleWeb/*
+              - /EPA_Taskbox
+              - /EPA_Taskbox/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 20
+
+  OSHTTPSListenerExtraRule12:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /LDAPAuthProvider
+              - /LDAPAuthProvider/*
+              - /TemplateManager
+              - /TemplateManager/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 21
+
+  OSHTTPSListenerExtraRule13:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /UsersServices
+              - /UsersServices/*
+              - /SAPDevService
+              - /SAPDevService/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 22
+
+  OSHTTPSListenerExtraRule14:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /SOAPDevService
+              - /SOAPDevService/*
+              - /RichWidgets
+              - /RichWidgets/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 23
+
+  OSHTTPSListenerExtraRule15:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /RESTDevService
+              - /RESTDevService/*
+              - /SecurityUtils
+              - /SecurityUtils/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 24
+
+  OSHTTPSListenerExtraRule16:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /Template_TraditionalWeb
+              - /Template_TraditionalWeb/*
+              - /server.api
+              - /server.identity
+      ListenerArn: !Ref HTTPSListener
+      Priority: 25
+
+  OSHTTPSListenerExtraRule17:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ArchitectureDashboardProbe
+              - /ArchitectureDashboardProbe/*
+              - /Arch_BaseTypes
+              - /Arch_BaseTypes/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 26
+
+  OSHTTPSListenerExtraRule18:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ArPr_Comm_Queue
+              - /ArPr_Comm_Queue/*
+              - /ArPr_Communication
+              - /ArPr_Communication/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 27
+
+  OSHTTPSListenerExtraRule19:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ArPr_Core
+              - /ArPr_Core/*
+              - /ArPrEnv_Arch_Col
+              - /ArPrEnv_Arch_Col/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 28
+
+  OSHTTPSListenerExtraRule20:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ArPrEnv_Code_Col
+              - /ArPrEnv_Code_Col/*
+              - /ArPrEnv_Perf_Col
+              - /ArPrEnv_Perf_Col/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 29
+
+  OSHTTPSListenerExtraRule21:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ArPrEnv_Code_Col
+              - /ArPrEnv_Code_Col/*
+              - /ArPrEnv_Perf_Col
+              - /ArPrEnv_Perf_Col/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 30
+
+  HTTPSListener:
+    Condition: IsProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      Certificates:
+      - CertificateArn: !Ref Certificate
+      DefaultActions:
+      - Type: "redirect"
+        RedirectConfig:
+          Protocol: "HTTPS"
+          Port: 443
+          Host: "#{host}"
+          Path: "/lifetime"
+          StatusCode: HTTP_301
+      LoadBalancerArn: !Ref OSLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+
+Outputs:
+  OSLoadBalancerCanonicalHostedZoneID:
+    Description: OS LoadBalancer Canonical Hosted Zone ID
+    Value: !If
+      - IsProdEnv
+      - !GetAtt OSLoadBalancer.CanonicalHostedZoneID
+      - xxxxxxxxx
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-OSLoadBalancerCanonicalHostedZoneID"
+
+  OSLoadBalancerDNSName:
+    Description: OS LoadBalancer DNS Name
+    Value: !If
+      - IsProdEnv
+      - !GetAtt OSLoadBalancer.DNSName
+      - xxx.xxxxxx.com
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-OSLoadBalancerDNSName"
+
+  OSLoadBalancer:
+    Description: OS LoadBalancer Ref
+    Value: !If
+      - IsProdEnv
+      - !Ref OSLoadBalancer
+      - xxxxxxxxxxx
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-OSLoadBalancer"

@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create a website redirects to S3Bucket sub directories.
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: 'development'
+    Description: Name Of The Environment
+  LambdaTimeoutSeconds:
+    Type: Number
+    Default: 30
+    Description: Lambda timeout value
+Resources:
+  MarketingSiteRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+            - edgelambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:*
+            Resource: arn:aws:logs:*:*:*
+            
+  MarketingWebsiteRedirect:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentName}-MarketingWebsiteRedirect'
+      Runtime: nodejs12.x
+      Role: !GetAtt MarketingSiteRole.Arn
+      Handler: index.handler
+      Timeout: !Ref LambdaTimeoutSeconds
+      Code:
+        ZipFile: |
+          'use strict';
+               exports.handler = (event, context, callback) => {
+              // Extract the request from the CloudFront event that is sent to Lambda@Edge 
+              var request = event.Records[0].cf.request;
+              // Extract the URI from the request                    
+              var olduri = request.uri;
+              // Match any '/' that occurs at the end of a URI. Replace it with a default index
+              var newuri = olduri.replace(/\/$/, '\/index.html');
+              // Log the URI as received by CloudFront and the new URI to be used to fetch from origin
+              //console.log("Old URI: " + olduri);
+              //console.log("New URI: " + newuri);
+              // Replace the received URI with the URI that includes the index page
+              request.uri = newuri;
+              // Return to CloudFront
+              return callback(null, request);
+            };;
+      Description: Invoke a function during stack creation.
+      
+  MarketingWebsiteRedirectLambdaFunctionVersion: 
+    Type: 'AWS::Lambda::Version'
+    Properties:
+      FunctionName:
+        Ref: MarketingWebsiteRedirect

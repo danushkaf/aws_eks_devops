@@ -1,0 +1,208 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Base template
+Parameters:
+  SharedAccountID:
+    Type: String
+    Description: Shared Account ID
+  MasterAccountID:
+    Type: String
+    Description: Master Account ID
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Configuration
+        Parameters:
+          - SharedAccountID
+          - MasterAccountID
+
+Resources:
+  LambdaBasicExecution:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AdministratorAccess'
+      Path: /
+      RoleName: stacksets-exec-update-controltowerexecution-role-lambda-role
+
+  CloudFormationFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - "UpdateRoleFunction"
+          - "Arn"
+      Action: 'lambda:InvokeFunction'
+      Principal: cloudformation.amazonaws.com
+      SourceArn: !Ref AWS::StackId
+
+  UpdateRoleResource:
+    DependsOn: CloudFormationFunctionPermission
+    Type: Custom::UpdateRoleResource
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - UpdateRoleFunction
+        - Arn
+      Region:
+        Ref: AWS::Region
+
+  LambdaKey:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: !Sub "This is customer managed CMK for Lamda Envs at rest encrytion."
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:*"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+  UpdateRoleFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      KmsKeyArn: !GetAtt LambdaKey.Arn
+      Code:
+        ZipFile: |
+          var querystring = require('querystring');
+          var https = require('https');
+          var AWS = require('aws-sdk');
+          var shared_account_id = process.env.shared_account_id;
+          var master_account_id = process.env.master_account_id;
+          var responseStatus = "FAILED";
+          var responseData = {};
+          exports.handler = async (event, context) => {
+            if (event.RequestType == "Delete") {
+              responseStatus = "SUCCESS";
+              responseData = {Status: "Success"};
+              await sendResponse(context, event);
+            } else {
+              await update(context, event);
+              await sendResponse(context, event);
+            }
+            context.done();
+          }
+          async function update(context, event) {
+            try {
+              let http_promise = updatePromise(event, context);
+              let output = await http_promise;
+              return output;
+            } catch (error) {
+              console.log(error);
+              return "";
+            }
+          }
+          function updatePromise(event, context) {
+            return new Promise((resolve, reject) => {
+              var iam = new AWS.IAM({apiVersion: '2010-05-08'});
+              var trustPolicy = {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": {
+                      "AWS": [
+                        "arn:aws:iam::" + master_account_id + ":root",
+                        "arn:aws:iam::" + shared_account_id + ":root"
+                      ]
+                    },
+                    "Action": "sts:AssumeRole"
+                  },
+                ]
+              };
+              var params = {
+                PolicyDocument: JSON.stringify(trustPolicy),
+                RoleName: "AWSControlTowerExecution"
+              };
+              iam.updateAssumeRolePolicy(params, function(err, data) {
+                if (!err) {
+                  responseStatus = "SUCCESS";
+                  responseData = {Status: "Success"};
+                }
+                resolve("");
+              });
+            });
+          }
+          async function sendResponse(context, event) {
+            try {
+              let http_promise = sendResponsePromise(event, context, responseStatus, responseData);
+              let output = await http_promise;
+              return output;
+            } catch (error) {
+              console.log(error);
+              return "";
+            }
+          }
+          function sendResponsePromise(event, context, responseStatus, responseData) {
+            return new Promise((resolve, reject) => {
+              var responseBody = JSON.stringify({
+                Status: responseStatus,
+                Reason: "See the details in CloudWatch Log Stream: " + context.logStreamName,
+                PhysicalResourceId: context.logStreamName,
+                StackId: event.StackId,
+                RequestId: event.RequestId,
+                LogicalResourceId: event.LogicalResourceId,
+                Data: responseData
+              });
+              var https = require("https");
+              var url = require("url");
+              var parsedUrl = url.parse(event.ResponseURL);
+              var options = {
+                hostname: parsedUrl.hostname,
+                port: 443,
+                path: parsedUrl.path,
+                method: "PUT",
+                headers: {
+                  "content-type": "",
+                  "content-length": responseBody.length
+                }
+              };
+              var request = https.request(options, function(response) {
+                console.log("Response sent. response : " + response);
+                resolve("");
+              });
+              request.on("error", function(error) {
+                console.log("Response sent. error : " + error);
+                reject(error);
+              });
+              request.write(responseBody);
+              request.end();
+            });
+          }
+      Handler: index.handler
+      MemorySize: 1024
+      Timeout: 30
+      Environment:
+        Variables:
+          shared_account_id: !Ref SharedAccountID
+          master_account_id: !Ref MasterAccountID
+      Role: !GetAtt LambdaBasicExecution.Arn
+      Runtime: nodejs12.x

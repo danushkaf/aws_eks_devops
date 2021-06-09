@@ -1,0 +1,82 @@
+# this is an minimal `stack config` file.
+# http://stacker.readthedocs.io/en/latest/config.html
+#
+# The stacker namespace, provided by the environment file.
+# http://stacker.readthedocs.io/en/latest/config.html#namespace-delimiter
+namespace: ${namespace}
+
+# The bucket where stacker stores generated CloudFormation templates.
+# http://stacker.readthedocs.io/en/latest/config.html#s3-bucket
+stacker_bucket: ${stacker_bucket}
+
+# This sets the syspath to include the local path, which allows access to the
+# blueprints in the blueprints directory.
+# http://stacker.readthedocs.io/en/latest/config.html#module-paths
+sys_path: .
+
+# The stacks key accepts a list of stack declarations.
+# http://stacker.readthedocs.io/en/latest/config.html#stacks
+# variables which have default values need not be specified here. if specified, values speciifed here will
+# override the values in CF template
+stacks:
+  - name: ${main_efs_backup_dr_infrastructure_stack_name}
+    template_path: ${template_path}/templates/main-templates/efs-backup-dr.yaml
+    region: ${drregion}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+
+  - name: ${main_efs_backup_infrastructure_stack_name}
+    template_path: ${template_path}/templates/main-templates/efs-backup.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      EFSBackupRetentionPeriod: ${efs_backup_retention_period}
+      EFSBackupMoveToColdStorageAfterPeriod: ${efs_backup_period_to_move_to_cold_storage}
+      EFSBackupCron: ${efs_backup_cron}
+      DRVaultArn: ${output ${main_efs_backup_dr_infrastructure_stack_name}::BackupVaultArn}
+
+  - name: ${main_dr_infrastructure_stack_name}
+    template_path: ${template_path}/templates/main-templates/the-xyz-DR.yaml
+    region: ${drregion}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      CustomResourceLambdaExecutionRoleArn: ${crr_lambda_role_arn}
+
+  - name: ${main_rds_crr_infrastructure_stack_name}
+    template_path: ${template_path}/templates/main-templates/cicd-crr-resources.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      RDSClusterIdentifier: ${sonar_rds_clustername}
+      LambdaS3BucketName: ${shared_lambda_s3_bucket_name}
+      CRRLambdaFileName: ${sonar_rds_crr_lambda_file_name}
+      CRRLambdaExecutionRoleArn: ${crr_lambda_role_arn}
+      RDSKey: ${output ${main_dr_infrastructure_stack_name}::RDSKey}
+      DRRegion: ${drregion}
+      SnapshotCRRCron: ${shared_rds_crr_cron}
+
+  - name: ${main_rds_crr_dr_infrastructure_stack_name}
+    template_path: ${template_path}/templates/main-templates/cicd-crr-dr-resources.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      RDSClusterIdentifier: ${sonar_rds_clustername}
+      LambdaS3BucketName: ${shared_lambda_s3_bucket_name}
+      CRRLambdaFileName: ${sonar_rds_cleanup_lambda_file_name}
+      CRRLambdaExecutionRoleArn: ${crr_lambda_role_arn}
+      SnapshotRetentionInDays: ${shared_rds_dr_retention_in_days}
+      SnapshotCRRCron: ${shared_rds_crr_cron}
+      DRRegion: ${drregion}
+
+  - name: ${alerts_stack_name}
+    template_path: ${template_path}/templates/alerts/common-alerts.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      Email: ${notify_email}

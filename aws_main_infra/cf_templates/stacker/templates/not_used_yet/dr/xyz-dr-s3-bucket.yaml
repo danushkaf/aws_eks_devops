@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    AllowedValues:
+      - uatdr
+      - proddr
+
+  NodeInstanceRole:
+    Type: String
+    Description: Input the ARN of the node security group of nodes in EKS cluster in DR environment
+
+Resources:
+
+#CMK needs to be created for replica bucket as well
+  CMKForDocumentS3Replica:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: "This is customer managed CMK for document service of S3 bucket replica"
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+            Resource: "*"
+          -
+            Effect: Allow
+            Principal:
+              AWS: !Ref NodeInstanceRole
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+  S3ReplicaCustomerDocuments:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${EnvironmentPrefix}-replica-xyz-customer-documents'
+      AccessControl: Private
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref CMKForDocumentS3Replica
+
+   #bucket policy is required to grant owner of source bucket permissions to perform replication actions
+
+  S3ReplicaCustomerDocumentsBktPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3ReplicaCustomerDocuments
+      PolicyDocument:
+        Version: 2012-10-17
+        Id: PolicyForDestinationBucket
+        Statement:
+          - Sid: Permissions on objects
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - s3:ReplicateDelete
+              - s3:ReplicateObject
+            Resource: !Join ["/", [ !GetAtt S3ReplicaCustomerDocuments.Arn,  '*'] ]
+          - Sid: Permissions on bucket
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - s3:List*
+              - s3:GetBucketVersioning
+              - s3:PutBucketVersioning
+            Resource: !GetAtt S3ReplicaCustomerDocuments.Arn
+          - Sid: Block HTTP
+            Action:
+              - 's3:*'
+            Effect: Deny
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref S3Bucket
+                - /*
+            Principal: '*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+
+
+Outputs:
+  S3ReplicaCustomerDocuments:
+    Value: !GetAtt S3ReplicaCustomerDocuments.Arn
+  CMKForDocumentS3Replica:
+    Value: !GetAtt CMKForDocumentS3Replica.Arn

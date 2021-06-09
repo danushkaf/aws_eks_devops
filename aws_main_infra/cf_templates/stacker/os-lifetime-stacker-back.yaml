@@ -1,0 +1,138 @@
+# this is an minimal `stack config` file.
+# http://stacker.readthedocs.io/en/latest/config.html
+#
+# The stacker namespace, provided by the environment file.
+# http://stacker.readthedocs.io/en/latest/config.html#namespace-delimiter
+namespace: ${namespace}
+
+# The bucket where stacker stores generated CloudFormation templates.
+# http://stacker.readthedocs.io/en/latest/config.html#s3-bucket
+stacker_bucket: ${stacker_bucket}
+
+# This sets the syspath to include the local path, which allows access to the
+# blueprints in the blueprints directory.
+# http://stacker.readthedocs.io/en/latest/config.html#module-paths
+sys_path: .
+
+# The stacks key accepts a list of stack declarations.
+# http://stacker.readthedocs.io/en/latest/config.html#stacks
+# variables which have default values need not be specified here. if specified, values speciifed here will
+# override the values in CF template
+stacks:
+
+  - name: ${os_infra_stack_name}
+    template_path: ${template_path}/templates/outsystems-resources/os-lifetime.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      VpcBlock: ${os_vpc_block}
+      BastionImageID: ${os_bastion_image_id}
+      BastionInstanceType: ${os_bastion_instance_type}
+      BastionNodeVolumeSize: ${os_bastion_volume_size}
+      Subnet01Block: ${os_subnet01_cidr}
+      Subnet02Block: ${os_subnet02_cidr}
+      Subnet03Block: ${os_subnet03_cidr}
+      Subnet04Block: ${os_subnet04_cidr}
+      Subnet05Block: ${os_subnet05_cidr}
+      Subnet06Block: ${os_subnet06_cidr}
+      KeyName: ${os_key_name}
+      BastionNodeAutoScalingGroupDesiredCapacity: ${os_bastion_asg_desired}
+      BastionNodeAutoScalingGroupMaxSize: ${os_bastion_asg_max}
+      BastionNodeAutoScalingGroupMinSize: ${os_bastion_asg_min}
+      NodeAutoScalingGroupDesiredCapacity: ${os_asg_desired}
+      NodeAutoScalingGroupMaxSize: ${os_asg_max}
+      NodeAutoScalingGroupMinSize: ${os_asg_min}
+      PolicyTargetValue: ${os_asg_scaling_cpu_value}
+      NodeGroupName: ${os_asg_name}
+      NodeImageId: ${os_server_ami}
+      NodeInstanceType: ${os_server_instance_type}
+      NodeVolumeSize: ${os_primary_ebs_size}
+      SecondNodeVolumeSize: ${os_secondary_ebs_size}
+      DBClusterIdentifier: ${os_db_cluster_id}
+      DBInstanceType: ${os_rds_instance_type}
+      DatabaseReplication: ${os_db_replication}
+      RDSBackupRetentionPeriod: ${os_db_backup_retention_days}
+      SQLServerEngine: ${os_sql_server_engine}
+      SQLServerVersion: ${os_sql_server_version}
+      SQLServerAllocatedStorage: ${os_sql_server_allocated_storage}
+      OutSystemsHostname: ${os_hostname}
+      OutSystemsRootHostname: ${os_subdomain}
+      OutSystemsHostedZoneID: ${os_hostedzone_id}
+      DatabaseUsername: ${os_db_username}
+      DatabasePassword: ${os_db_password}
+      OutSystemsAdminDBUsername: ${os_system_admin_db_username}
+      OutSystemsAdminDBPassword: ${os_system_admin_db_password}
+      OutSystemsRuntimeDBAdminUsername: ${os_runtime_admin_db_username}
+      OutSystemsRuntimeDBAdminPassword: ${os_runtime_admin_db_password}
+      OutSystemsRuntimeLoggingDBAdminUsername: ${os_runtime_log_admin_db_username}
+      OutSystemsRuntimeLoggingDBAdminPassword: ${os_runtime_log_admin_db_password}
+      OutSystemsSessionDBAdminUsername: ${os_session_admin_db_username}
+      OutSystemsSessionDBAdminPassword: ${os_session_admin_db_password}
+      OutSystemsPlatformPassword: ${os_platform_admin_db_password}
+      OutSystemsServicePassword: ${os_service_password}
+      OutSystemsCatalogDatabaseName: ${os_platform_dbname}
+      OutSystemsSessionDatabaseName: ${os_session_dbname}
+      Email: ${notify_email}
+      OWSAPWAFRuleGroupARN: ${owsap_webacl_arn}
+
+  # - name: ${os_infra_stack_name}
+  #   template_path: ${template_path}/templates/outsystems-resources/os-lifetime.yaml
+  #   region: ${region}
+  #   profile: ${infrastructure_profile}
+  #   variables:
+  #     EnvironmentPrefix: ${environment_prefix}
+  #     KeyName: ${os_key_name}
+  #     NodeAutoScalingGroupDesiredCapacity: ${os_asg_desired}
+  #     NodeAutoScalingGroupMaxSize: ${os_asg_max}
+  #     NodeAutoScalingGroupMinSize: ${os_asg_min}
+  #     PolicyTargetValue: ${os_asg_scaling_cpu_value}
+  #     NodeGroupName: ${os_asg_name}
+  #     NodeImageId: ${os_server_ami}
+  #     NodeInstanceType: ${os_server_instance_type}
+  #     NodeVolumeSize: ${os_primary_ebs_size}
+  #     SecondNodeVolumeSize: ${os_secondary_ebs_size}
+  #     OutSystemsHostname: ${os_hostname}
+  #     OutSystemsRootHostname: ${os_subdomain}
+  #     OutSystemsHostedZoneID: ${os_hostedzone_id}
+  #     DatabaseUsername: ${os_db_username}
+  #     DatabasePassword: ${os_db_password}
+  #     OutSystemsAdminDBUsername: ${os_system_admin_db_username}
+  #     OutSystemsAdminDBPassword: ${os_system_admin_db_password}
+  #     OutSystemsRuntimeDBAdminUsername: ${os_runtime_admin_db_username}
+  #     OutSystemsRuntimeDBAdminPassword: ${os_runtime_admin_db_password}
+  #     OutSystemsRuntimeLoggingDBAdminUsername: ${os_runtime_log_admin_db_username}
+  #     OutSystemsRuntimeLoggingDBAdminPassword: ${os_runtime_log_admin_db_password}
+  #     OutSystemsSessionDBAdminUsername: ${os_session_admin_db_username}
+  #     OutSystemsSessionDBAdminPassword: ${os_session_admin_db_password}
+  #     OutSystemsPlatformPassword: ${os_platform_admin_db_password}
+  #     OutSystemsServicePassword: ${os_service_password}
+  #     OutSystemsCatalogDatabaseName: ${os_platform_dbname}
+  #     OutSystemsSessionDatabaseName: ${os_session_dbname}
+  #     Email: ${notify_email}
+  #     OWSAPWAFRuleGroupARN: ${owsap_webacl_arn}
+  #     NodeSecurityGroup: ${output ${os_prod_infra_stack_name}::NodeSecurityGroup}
+  #     NodeInstanceProfile: ${output ${os_prod_infra_stack_name}::NodeInstanceProfile}
+  #     PrivateSubnets: ${output ${os_prod_infra_stack_name}::SubnetIds}
+  #     PublicSubnets: ${output ${os_prod_infra_stack_name}::PublicSubnetIds}
+  #     ALBSecurityGroup:  ${output ${os_prod_infra_stack_name}::ALBSecurityGroup}
+  #     DatabasePrimaryInstanceEndpointAddress: ${output ${os_prod_infra_stack_name}::DatabasePrimaryInstanceEndpointAddress}
+  #
+  # - name: ${os_route53_stack_name}
+  #   template_path: ${template_path}/templates/outsystems-resources/os-route53-resources.yaml
+  #   region: ${region}
+  #   profile: ${shared_profile}
+  #   variables:
+  #     OSLBDNSName: ${output ${os_infra_stack_name}::OSLoadBalancerDNSName}
+  #     OSLBDNSHostedZoneID: ${output ${os_infra_stack_name}::OSLoadBalancerCanonicalHostedZoneID}
+  #     OutSystemsHostname: ${os_hostname}
+  #     OutSystemsAPIHostname: ${os_api_hostname}
+  #     HostedZoneName: ${os_hostedzone}
+
+  - name: ${alerts_stack_name}
+    template_path: ${template_path}/templates/alerts/common-alerts.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}
+      Email: ${notify_email}

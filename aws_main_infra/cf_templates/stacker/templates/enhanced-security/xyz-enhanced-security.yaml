@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Provision Security Components
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: 'enhanced-security'
+    Description: Environment Prefix
+  AssessmentSchedule:
+    Type: String
+    Default: 'cron(00 06 ? * SUN *)'
+    Description: Assessment Schedule Cron
+  TrustesAccountIDList:
+    Type: CommaDelimitedList
+    Description: List of trusted accounts
+
+Resources:
+  CwEventAutoAssessment:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-InspectorScheduledAssessment"
+      Description: 'Scheduled trigger for Amazon Inspector Assessment'
+      State: ENABLED
+      Targets:
+        - Arn:
+            Ref: AssessmentTemplate
+          Id: AmazonInspectorAssessment
+          RoleArn:
+            'Fn::GetAtt':
+              - AutoAssessmentIAMRole
+              - Arn
+      ScheduleExpression: !Ref AssessmentSchedule
+
+  AssessmentTarget:
+    Type: AWS::Inspector::AssessmentTarget
+    Properties:
+      AssessmentTargetName : !Sub "${EnvironmentPrefix}-AssessmentTarget"
+
+  AssessmentTemplate:
+    Type: AWS::Inspector::AssessmentTemplate
+    Properties:
+      AssessmentTargetArn: !GetAtt AssessmentTarget.Arn
+      AssessmentTemplateName: !Sub "${EnvironmentPrefix}-AssessmentTemplate"
+      DurationInSeconds: 3600
+      RulesPackageArns:
+        - arn:aws:inspector:us-east-1:357557129151:rulespackage/0-ubA5XvBh
+        - arn:aws:inspector:us-east-1:357557129151:rulespackage/0-sJBhCr0F
+        - arn:aws:inspector:us-east-1:357557129151:rulespackage/0-SPzU33xe
+        - arn:aws:inspector:us-east-1:357557129151:rulespackage/0-SnojL3Z6
+
+  AutoAssessmentIAMRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns: []
+      Policies:
+        - PolicyName: InspectorAssessmentTrigger
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'inspector:StartAssessmentRun'
+                Resource: '*'
+      RoleName: !Sub "${EnvironmentPrefix}-Invoke-Role"
+
+  GDDetector:
+    Type: AWS::GuardDuty::Detector
+    Properties:
+      Enable: True
+
+  Analyzer:
+    Type: 'AWS::AccessAnalyzer::Analyzer'
+    Properties:
+      AnalyzerName: AccountAnalyzer
+      Type: ACCOUNT
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentPrefix}-Analyzer
+      ArchiveRules:
+        - RuleName: ArchiveTrustedAccountAccess
+          Filter:
+            - Property: 'principal.AWS'
+              Eq: !Ref TrustesAccountIDList

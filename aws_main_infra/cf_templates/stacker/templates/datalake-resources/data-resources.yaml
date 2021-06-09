@@ -1,0 +1,1636 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: DataLake Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  OSVPCID:
+    Type: String
+    Description: OutSystems VPC
+  ILVPCID:
+    Type: String
+    Description: IL VPC ID
+  VpcBlock:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: >-
+      The CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR
+      range.
+  ILVpcBlock:
+    Type: String
+    Default: 192.168.0.0/16
+    Description: >-
+      The CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR
+      range.
+  OSVpcBlock:
+    Type: String
+    Default: 172.31.0.0/16
+    Description: >-
+      The CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR
+      range.
+  ILDBSecurityGroup:
+    Type: String
+    Description: IL DB Security Group
+  OSDBSecurityGroup:
+    Type: String
+    Description: OS DB Security Group
+  ILPublicRouteTableID:
+    Type: String
+    Description: IL Public Route Table ID
+  ILPrivateRouteTableID:
+    Type: String
+    Description: IL Private Route Table ID
+  OSPublicRouteTableID:
+    Type: String
+    Description: OS Public Route Table ID
+  OSPrivateRouteTableID:
+    Type: String
+    Description: OS Private Route Table ID
+  Subnet01Block:
+    Type: String
+    Default: 10.0.0.0/24
+    Description: CidrBlock for subnet 01 within the VPC
+  Subnet02Block:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CidrBlock for subnet 02 within the VPC
+  Subnet03Block:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: CidrBlock for subnet 03 within the VPC
+  Subnet04Block:
+    Type: String
+    Default: 10.0.3.0/24
+    Description: CidrBlock for subnet 04 within the VPC
+  Subnet05Block:
+    Type: String
+    Default: 10.0.4.0/24
+    Description: CidrBlock for subnet 05 within the VPC
+  Subnet06Block:
+    Type: String
+    Default: 10.0.5.0/24
+    Description: CidrBlock for subnet 06 within the VPC
+  KeyName:
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Default: Datafoundry
+  WindowsNodeAutoScalingGroupDesiredCapacity:
+    Type: Number
+    Default: 1
+    Description: Desired capacity of Node Group ASG.
+  WindowsNodeAutoScalingGroupMaxSize:
+    Type: Number
+    Default: 1
+    Description: Maximum size of Windows Node Group ASG. Set to at least 1 greater than WindowsNodeAutoScalingGroupDesiredCapacity.
+  WindowsNodeAutoScalingGroupMinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum size of Windows Node Group ASG.
+  WindowsNodeGroupName:
+    Type: String
+    Default: datalake
+    Description: Unique identifier for the Windows Node Group.
+  WindowsNodeImageID:
+    Type: String
+    Default: ami-07d8c98607d0b1326
+    Description: Image ID / AMI ID for Windows Host
+  WindowsNodeInstanceType:
+    Type: String
+    Default: t3.large
+    AllowedValues:
+      - m1.small
+      - m1.medium
+      - m1.large
+      - m1.xlarge
+      - m2.xlarge
+      - m2.2xlarge
+      - m2.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m4.16xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.8xlarge
+      - m5.12xlarge
+      - m5.16xlarge
+      - m5.24xlarge
+      - m5.metal
+      - m5a.large
+      - m5a.xlarge
+      - m5a.2xlarge
+      - m5a.4xlarge
+      - m5a.8xlarge
+      - m5a.12xlarge
+      - m5a.16xlarge
+      - m5a.24xlarge
+      - m5ad.large
+      - m5ad.xlarge
+      - m5ad.2xlarge
+      - m5ad.4xlarge
+      - m5ad.12xlarge
+      - m5ad.24xlarge
+      - m5d.large
+      - m5d.xlarge
+      - m5d.2xlarge
+      - m5d.4xlarge
+      - m5d.8xlarge
+      - m5d.12xlarge
+      - m5d.16xlarge
+      - m5d.24xlarge
+      - m5d.metal
+      - t1.micro
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - t3a.nano
+      - t3a.micro
+      - t3a.small
+      - t3a.medium
+      - t3a.large
+      - t3a.xlarge
+      - t3a.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type
+    Description: EC2 instance type for the Windows node instances
+  WindowsNodeVolumeSize:
+    Type: Number
+    Default: 50
+    Description: Windows Node volume size
+  LinuxNodeAutoScalingGroupDesiredCapacity:
+    Type: Number
+    Default: 1
+    Description: Desired capacity of Linux Node Group ASG.
+  LinuxNodeAutoScalingGroupMaxSize:
+    Type: Number
+    Default: 1
+    Description: Maximum size of Linux Node Group ASG. Set to at least 1 greater than LinuxNodeAutoScalingGroupDesiredCapacity.
+  LinuxNodeAutoScalingGroupMinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum size of Linux Node Group ASG.
+  LinuxNodeGroupName:
+    Type: String
+    Default: datalake
+    Description: Unique identifier for the Linux Node Group.
+  LinuxNodeImageID:
+    Type: String
+    Default: ami-07d8c98607d0b1326
+    Description: Image ID / AMI ID for Linux Host
+  LinuxNodeInstanceType:
+    Type: String
+    Default: t3.large
+    AllowedValues:
+      - t1.micro
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - t3a.nano
+      - t3a.micro
+      - t3a.small
+      - t3a.medium
+      - t3a.large
+      - t3a.xlarge
+      - t3a.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type
+    Description: EC2 instance type for the Linux node instances
+  LinuxNodeVolumeSize:
+    Type: Number
+    Default: 50
+    Description: Linux Node volume size
+  RedshiftClusterIdentifier:
+    Type: String
+    Description: Redshift Cluster Name
+    Default: DataLakeRedshiftCluster
+  RedshiftDBName:
+    Type: String
+    Description: Redshift DB Name
+  RedshiftUsername:
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 1 to 16 alphanumeric characters.
+    Description: The Redshift admin account user name, between 1 to 16 alphanumeric characters.
+    MaxLength: '16'
+    MinLength: '1'
+    Type: String
+  RedshiftSchema:
+    Description: The Redshift schema name.
+    Default: xyz_dwh
+    Type: String
+  RedshiftPassword:
+    AllowedPattern: "[a-zA-Z0-9]+"
+    ConstraintDescription: must be between 8 to 41 alphanumeric characters.
+    Description: The Redshift admin account password, between 8 to 41 alphanumeric characters.
+    MaxLength: '41'
+    MinLength: '8'
+    NoEcho: 'true'
+    Type: String
+  RedshiftInstanceType:
+    Type: String
+    Default: dc2.large
+    Description: Enter Redshift Instance types.
+  RedshiftClusterType:
+    Type: String
+    Default: single-node
+    AllowedValues:
+      - single-node
+      - multi-node
+    Description: Enter Redshift Cluster types.
+  RedshiftBackupRetentionPeriod:
+    Type: Number
+    Default: 7
+    Description: Database backup retention period in days.
+  RedshiftNoOfNodes:
+    Type: Number
+    Default: 1
+    Description: No of Redshift nodes.
+  AlmisSFTPSSHKey:
+    Description: SSH Key for SFTP User.
+    NoEcho: 'true'
+    Type: String
+  AlmisSFTPUserName:
+    Description: Almis SFTP Username.
+    Type: String
+  AccessSFTPSSHKey:
+    Description: SSH Key for SFTP User.
+    NoEcho: 'true'
+    Type: String
+  AccessSFTPUserName:
+    Description: Almis SFTP Username.
+    Type: String
+  LambdaS3BucketName:
+    Type: String
+    Description: Lambda Code zip file S3 bucket name
+  DWHLoadLambdaMemorySizeMB:
+    Type: Number
+    Description: Lambda max MemorySize in MB
+  DWHLoadLambdaTimeoutSeconds:
+    Type: Number
+    Description: Lambda timeout value
+  DWHLoadLambdaS3FileName:
+    Type: String
+    Description: Lambda Code zip filename in S3
+  DWHAlmisLambdaMemorySizeMB:
+    Type: Number
+    Description: Lambda max MemorySize in MB
+  DWHAlmisLambdaTimeoutSeconds:
+    Type: Number
+    Description: Lambda timeout value
+  DWHAlmisLambdaS3FileName:
+    Type: String
+    Description: Lambda Code zip filename in S3
+  DWHPsycopg2S3FileName:
+    Type: String
+    Description: Lambda Layer Code zip filename in S3
+  ETLMambuUsername:
+    Description: ETL Mambu username.
+    Type: String
+  ETLMambuPassword:
+    Description: ETL Mambu password.
+    Type: String
+    NoEcho: 'true'
+  ETLMambuSubdomain:
+    Description: ETL Mambu subdomain.
+    Type: String
+  ETLMambuStartDate:
+    Description: ETL Mambu Start Date.
+    Type: String
+  ETLMambuLookBackWindow:
+    Description: ETL Mambu lookback window.
+    Type: String
+  ETLMambuUserAgent:
+    Description: ETL Mambu user agent.
+    Type: String
+  ETLMambuPageSize:
+    Description: ETL Mambu Page Size.
+    Type: String
+  CRRBucketARN:
+    Description: ARN of CRR S3 bucket.
+    Type: String
+    Default: 'arn'
+  CRRRoleARN:
+    Description: ARN of CRR S3 Role.
+    Type: String
+  AppFlowIPRange1:
+    Description: Appflow ip cidr 1.
+    Type: String
+  AppFlowIPRange2:
+    Description: Appflow ip cidr 2.
+    Type: String
+  LambdaKeyArn:
+    Type: String
+    Description: Arn of Lambda Key
+  SecretKey:
+    Type: String
+    Description: ID of secret key
+
+Conditions:
+  IsRedshiftNotSingleNode: !Not [!Equals [!Ref RedshiftClusterType, "single-node"]]
+  IsDevEnv: !Equals [!Ref EnvironmentPrefix, 'dev']
+  IsProdEnv: !Equals [!Ref EnvironmentPrefix, 'prod']
+
+Resources:
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VpcBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-VPC'
+
+  FlowLogsRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-dl-FlowLogsRole'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - vpc-flow-logs.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+
+  FlowLogsRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: FlowLogsRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          - logs:DescribeLogGroups
+          - logs:DescribeLogStreams
+          Resource: "*"
+
+  CICDFlowLogs:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt FlowLogsRole.Arn
+      LogGroupName: !Sub ${EnvironmentPrefix}-dl-VPC-FlowLogs
+      ResourceId: !Ref VPC
+      ResourceType: VPC
+      TrafficType: ALL
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${EnvironmentPrefix}-datalake-s3-bucket"
+      AccessControl: Private
+      ReplicationConfiguration: !If
+        - IsProdEnv
+        - Role: !Ref CRRRoleARN
+          Rules:
+            - Destination:
+               Bucket: !Ref CRRBucketARN
+               StorageClass: STANDARD_IA
+              Status: Enabled
+        - !Ref AWS::NoValue
+      VersioningConfiguration: !If
+        - IsProdEnv
+        - Status: Enabled
+        - !Ref AWS::NoValue
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  DWHBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - "s3:PutObject"
+              - "s3:AbortMultipartUpload"
+              - "s3:ListMultipartUploadParts"
+              - "s3:ListBucketMultipartUploads"
+              - "s3:GetBucketAcl"
+              - "s3:PutObjectAcl"
+            Effect: Allow
+            Resource:
+              - !Join
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref S3Bucket
+              - !Join
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref S3Bucket
+                  - /*
+            Principal:
+              Service: appflow.amazonaws.com
+          - Action:
+              - 's3:*'
+            Effect: Deny
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref S3Bucket
+                - /*
+            Principal: '*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+
+  TransferLoggingRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-SFTP-Logging-Role'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - transfer.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSTransferLoggingAccess"
+      Path: /
+
+  TransferServer:
+    Type : AWS::Transfer::Server
+    Properties :
+      EndpointType: PUBLIC
+      LoggingRole: !GetAtt TransferLoggingRole.Arn
+      Protocols:
+          - SFTP
+      SecurityPolicyName: TransferSecurityPolicy-2020-06
+      IdentityProviderType: SERVICE_MANAGED
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentPrefix}-sftp-server"
+
+  SFTPS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${EnvironmentPrefix}-sftp-xyz"
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  SFTPBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref SFTPS3Bucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:*'
+            Effect: Deny
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref SFTPS3Bucket
+                - /*
+            Principal: '*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+
+  TransferUserRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-SFTP-User-Role'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - transfer.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+      Path: /
+
+  TransferUser:
+    Type: 'AWS::Transfer::User'
+    Properties:
+      HomeDirectoryType: LOGICAL
+      HomeDirectoryMappings:
+        - Entry: '/'
+          Target: !Sub '/${SFTPS3Bucket}/${AlmisSFTPUserName}'
+      Policy: !Sub '{
+        "Version":"2012-10-17",
+        "Statement":[
+        {
+          "Sid":"AllowListingOfUserFolder",
+          "Action":["s3:ListBucket"],
+          "Effect":"Allow",
+          "Resource":["arn:aws:s3:::${SFTPS3Bucket}"],
+          "Condition":{
+            "StringLike":{"s3:prefix":["${AlmisSFTPUserName}/*","${AlmisSFTPUserName}"]
+            }
+          }
+        },
+        {
+          "Sid":"HomeDirObjectAccess",
+          "Effect":"Allow",
+          "Action":[
+            "s3:GetObject",
+            "s3:GetObjectVersion"
+          ],
+          "Resource":"arn:aws:s3:::${SFTPS3Bucket}/${AlmisSFTPUserName}/*"
+        }
+        ]}'
+      Role: !GetAtt TransferUserRole.Arn
+      ServerId: !GetAtt TransferServer.ServerId
+      SshPublicKeys:
+        - !Ref AlmisSFTPSSHKey
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentPrefix}-almis-user"
+      UserName: !Ref AlmisSFTPUserName
+
+  TransferAccessUser:
+    Type: 'AWS::Transfer::User'
+    Properties:
+      HomeDirectoryType: LOGICAL
+      HomeDirectoryMappings:
+        - Entry: '/'
+          Target: !Sub '/${SFTPS3Bucket}/${AccessSFTPUserName}'
+      Policy: !Sub '{
+        "Version":"2012-10-17",
+        "Statement":[
+        {
+          "Sid":"AllowListingOfUserFolder",
+          "Action":["s3:ListBucket"],
+          "Effect":"Allow",
+          "Resource":["arn:aws:s3:::${SFTPS3Bucket}"],
+          "Condition":{
+            "StringLike":{"s3:prefix":["${AccessSFTPUserName}","${AccessSFTPUserName}/*"]
+            }
+          }
+        },
+        {
+          "Sid":"HomeDirObjectAccess",
+          "Effect":"Allow",
+          "Action":[
+            "s3:GetObject",
+            "s3:GetObjectVersion"
+          ],
+          "Resource":["arn:aws:s3:::${SFTPS3Bucket}/${AccessSFTPUserName}/*"]
+        }
+        ]}'
+      Role: !GetAtt TransferUserRole.Arn
+      ServerId: !GetAtt TransferServer.ServerId
+      SshPublicKeys:
+        - !Ref AccessSFTPSSHKey
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentPrefix}-access-user"
+      UserName: !Ref AccessSFTPUserName
+
+  VPCEP:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument: '{
+        "Version":"2012-10-17",
+        "Statement":[{
+          "Effect":"Allow",
+          "Principal": "*",
+          "Action":["s3:*"],
+          "Resource":["*"]
+        }]
+      }'
+      RouteTableIds:
+        - !Ref RouteTable
+        - !Ref RouteTablePrivate
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcId: !Ref VPC
+
+  EC2VPCEP:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument: !Sub '{
+        "Version":"2012-10-17",
+        "Statement":[{
+          "Effect":"Allow",
+          "Principal":"*",
+          "Action":["ec2:*"],
+          "Resource":["*"]
+        }]
+      }'
+      SubnetIds:
+        - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+      SecurityGroupIds:
+        - !Ref VPCEPNodeSecurityGroup
+      PrivateDnsEnabled: true
+      VpcEndpointType: Interface
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2
+      VpcId: !Ref VPC
+
+  VPCEPNodeSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Security group for VPC Endpoints
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-VPCEP-SG'
+
+  VPCEPSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: VPCEPNodeSecurityGroup
+    Properties:
+      Description: Allow node to communicate with each other
+      FromPort: 0
+      GroupId: !Ref VPCEPNodeSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref VPCEPNodeSecurityGroup
+      ToPort: 65535
+
+  VPCEPNodeSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn:
+      - NodeSecurityGroup
+      - VPCEPNodeSecurityGroup
+    Properties:
+      Description: Allow node to communicate with each other
+      FromPort: 0
+      GroupId: !Ref VPCEPNodeSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      ToPort: 65535
+
+  NodeVPCEPSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn:
+      - NodeSecurityGroup
+      - VPCEPNodeSecurityGroup
+    Properties:
+      Description: Allow node to communicate with each other
+      FromPort: 0
+      GroupId: !Ref NodeSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref VPCEPNodeSecurityGroup
+      ToPort: 65535
+
+  OSVPCPeering:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      PeerVpcId: !Ref OSVPCID
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentPrefix}-OutSystems-VPCPeeringConnection
+      VpcId: !Ref VPC
+
+  ILVPCPeering:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      PeerVpcId: !Ref ILVPCID
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentPrefix}-IL-VPCPeeringConnection
+      VpcId: !Ref VPC
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-IG'
+
+  NatGateway1EIP:
+    Type: 'AWS::EC2::EIP'
+    DependsOn: VPCGatewayAttachment
+
+  NatGateway1:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-NG'
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref Subnet01
+
+  VPCGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  RouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-Public-RT'
+        - Key: Network
+          Value: Public
+
+  RouteTablePrivate:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-Private-RT'
+        - Key: Network
+          Value: Private
+
+  Route:
+    DependsOn: VPCGatewayAttachment
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  RoutePrivate:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref RouteTablePrivate
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PeeringRouteIL:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: !Ref ILVpcBlock
+      RouteTableId: !Ref RouteTable
+      VpcPeeringConnectionId: !Ref ILVPCPeering
+
+  PeeringRouteOS:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: !Ref OSVpcBlock
+      RouteTableId: !Ref RouteTable
+      VpcPeeringConnectionId: !Ref OSVPCPeering
+
+  PeeringPrivateRouteIL:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: !Ref ILVpcBlock
+      RouteTableId: !Ref RouteTablePrivate
+      VpcPeeringConnectionId: !Ref ILVPCPeering
+
+  PeeringPrivateRouteOS:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: !Ref OSVpcBlock
+      RouteTableId: !Ref RouteTablePrivate
+      VpcPeeringConnectionId: !Ref OSVPCPeering
+
+  PeeringRouteILPublicRouteTable:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: !Ref VpcBlock
+      RouteTableId: !Ref ILPublicRouteTableID
+      VpcPeeringConnectionId: !Ref ILVPCPeering
+
+  PeeringRouteILPrivateRouteTable:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: !Ref VpcBlock
+      RouteTableId: !Ref ILPrivateRouteTableID
+      VpcPeeringConnectionId: !Ref ILVPCPeering
+
+  PeeringRouteOSPublicRouteTable:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: !Ref VpcBlock
+      RouteTableId: !Ref OSPublicRouteTableID
+      VpcPeeringConnectionId: !Ref OSVPCPeering
+
+  PeeringRouteOSPrivateRouteTable:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: !Ref VpcBlock
+      RouteTableId: !Ref OSPrivateRouteTableID
+      VpcPeeringConnectionId: !Ref OSVPCPeering
+
+  Subnet01:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 01
+    Properties:
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet01Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-Pub-Subnet01'
+
+  Subnet02:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 02
+    Properties:
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet02Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-Pub-Subnet02'
+
+  Subnet03:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 03
+    Properties:
+      AvailabilityZone: !Select
+        - '2'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet03Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-Pub-Subnet03'
+
+  Subnet04:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 04
+    Properties:
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet04Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-Pri-Subnet04'
+
+  Subnet05:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 05
+    Properties:
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet05Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-Pri-Subnet05'
+
+  Subnet06:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 06
+    Properties:
+      AvailabilityZone: !Select
+        - '2'
+        - !GetAZs
+          Ref: 'AWS::Region'
+      CidrBlock: !Ref Subnet06Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-Pri-Subnet06'
+
+  Subnet01RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet01
+      RouteTableId: !Ref RouteTable
+
+  Subnet02RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet02
+      RouteTableId: !Ref RouteTable
+
+  Subnet03RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet03
+      RouteTableId: !Ref RouteTable
+
+  Subnet04RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet04
+      RouteTableId: !Ref RouteTablePrivate
+
+  Subnet05RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet05
+      RouteTableId: !Ref RouteTablePrivate
+
+  Subnet06RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet06
+      RouteTableId: !Ref RouteTablePrivate
+
+  NodeInstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-Node-IR'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+        - "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+        - "arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess"
+        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        - "arn:aws:iam::aws:policy/service-role/AmazonSSMMaintenanceWindowRole"
+        - "arn:aws:iam::aws:policy/service-role/AWSDataPipelineRole"
+        - "arn:aws:iam::aws:policy/AWSDataPipeline_FullAccess"
+        - "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforDataPipelineRole"
+
+      Path: /
+
+  InstancePermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: NodeInstanceRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetResourcePolicy
+          - secretsmanager:GetSecretValue
+          - secretsmanager:DescribeSecret
+          - secretsmanager:ListSecretVersionIds
+          - logs:*
+          - autoscaling:Describe*
+          - cloudwatch:*
+          - sns:*
+          - iam:GetPolicy
+          - iam:GetPolicyVersion
+          - iam:GetRole
+          - sts:AssumeRole
+          - glue:*
+          - kms:Encrypt
+          - kms:Decrypt
+          - kms:ReEncrypt*
+          - kms:GenerateDataKey*
+          - kms:DescribeKey
+          Resource: "*"
+        - Effect: Allow
+          Action:
+          - ssm:GetParameter
+          Resource: "arn:aws:ssm:*:*:parameter/AmazonCloudWatch-*"
+        - Effect: Allow
+          Action:
+          - iam:CreateServiceLinkedRole
+          Resource: "arn:aws:iam::*:role/aws-service-role/events.amazonaws.com/AWSServiceRoleForCloudWatchEvents*"
+          Condition:
+            StringLike:
+              iam:AWSServiceName: events.amazonaws.com
+
+  NodeInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: /
+      Roles:
+        - Ref: NodeInstanceRole
+
+  NodeSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-EC2-Node-SG'
+      GroupDescription: Security group for bastion node
+      VpcId: !Ref VPC
+
+  NodeSecurityGroupSelfIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description: Allow node to communicate with each other
+      FromPort: 0
+      GroupId: !Ref NodeSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      ToPort: 65535
+
+  ILADBSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: NodeSecurityGroup
+    Properties:
+      GroupId: !Ref ILDBSecurityGroup
+      Description: 'Allow DWH nodes to access IL database'
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+
+  OSADBSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: NodeSecurityGroup
+    Properties:
+      GroupId: !Ref OSDBSecurityGroup
+      Description: 'Allow DWH nodes to access OS database'
+      IpProtocol: tcp
+      FromPort: 1433
+      ToPort: 1433
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+
+  WindowsNodeLaunchConfig:
+    Type: "AWS::AutoScaling::LaunchConfiguration"
+    Properties:
+      AssociatePublicIpAddress: "false"
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: !Ref WindowsNodeVolumeSize
+            VolumeType: gp2
+      ImageId: !Ref WindowsNodeImageID
+      InstanceType: !Ref WindowsNodeInstanceType
+      IamInstanceProfile: !Ref NodeInstanceProfile
+      KeyName: !Ref KeyName
+      SecurityGroups:
+        - Ref: NodeSecurityGroup
+
+  WindowsNodeGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      DesiredCapacity: !Ref WindowsNodeAutoScalingGroupDesiredCapacity
+      LaunchConfigurationName: !Ref WindowsNodeLaunchConfig
+      MaxSize: !Ref WindowsNodeAutoScalingGroupMaxSize
+      MinSize: !Ref WindowsNodeAutoScalingGroupMinSize
+      Tags:
+        - Key: Name
+          PropagateAtLaunch: "true"
+          Value: !Sub ${EnvironmentPrefix}-${WindowsNodeGroupName}-EC2-Node
+        - Key: 'Patch Group'
+          PropagateAtLaunch: "true"
+          Value: Windows
+      VPCZoneIdentifier:
+        - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: "1"
+        MinInstancesInService: !Ref WindowsNodeAutoScalingGroupDesiredCapacity
+        PauseTime: PT5M
+
+  LinuxNodeLaunchConfig:
+    Condition: IsDevEnv
+    Type: "AWS::AutoScaling::LaunchConfiguration"
+    Properties:
+      AssociatePublicIpAddress: "false"
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: !Ref LinuxNodeVolumeSize
+            VolumeType: gp2
+        - DeviceName: /dev/xvdb
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: !Ref LinuxNodeVolumeSize
+            VolumeType: gp2
+      ImageId: !Ref LinuxNodeImageID
+      InstanceType: !Ref LinuxNodeInstanceType
+      IamInstanceProfile: !Ref NodeInstanceProfile
+      KeyName: !Ref KeyName
+      SecurityGroups:
+        - Ref: NodeSecurityGroup
+
+  LinuxNodeGroup:
+    Condition: IsDevEnv
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      DesiredCapacity: !Ref LinuxNodeAutoScalingGroupDesiredCapacity
+      LaunchConfigurationName: !Ref LinuxNodeLaunchConfig
+      MaxSize: !Ref LinuxNodeAutoScalingGroupMaxSize
+      MinSize: !Ref LinuxNodeAutoScalingGroupMinSize
+      Tags:
+        - Key: Name
+          PropagateAtLaunch: "true"
+          Value: !Sub ${EnvironmentPrefix}-${LinuxNodeGroupName}-EC2-Node
+        - Key: 'Patch Group'
+          PropagateAtLaunch: "true"
+          Value: AmazonLinux2
+      VPCZoneIdentifier:
+        - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: "1"
+        MinInstancesInService: !Ref LinuxNodeAutoScalingGroupDesiredCapacity
+        PauseTime: PT5M
+
+  MambuSecret:
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Description: "Credential for mambu dev environment required in ETL."
+      Name: !Sub '${EnvironmentPrefix}-ETL-Mambu'
+      KmsKeyId: !Ref SecretKey
+      SecretString: !Sub '{"username":"${ETLMambuUsername}","password":"${ETLMambuPassword}","subdomain":"${ETLMambuSubdomain}","start_date":"${ETLMambuStartDate}","lookback_window":"${ETLMambuLookBackWindow}","user_agent":"${ETLMambuUserAgent}","page_size":"${ETLMambuPageSize}"}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-ETL-Mambu'
+
+  ADBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Security group for redshift
+      VpcId: !Ref VPC
+
+  ADBSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: ADBSecurityGroup
+    Properties:
+      Description: Allow nodes to communicate with the redshift
+      FromPort: 5439
+      GroupId: !Ref ADBSecurityGroup
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      ToPort: 5439
+
+  AppFlowADBSecurityGroupIngress1:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: ADBSecurityGroup
+    Properties:
+      Description: Allow appflow to communicate with the redshift
+      FromPort: 5439
+      GroupId: !Ref ADBSecurityGroup
+      IpProtocol: tcp
+      CidrIp: !Ref AppFlowIPRange1
+      ToPort: 5439
+
+  AppFlowADBSecurityGroupIngress2:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: ADBSecurityGroup
+    Properties:
+      Description: Allow appflow to communicate with the redshift
+      FromPort: 5439
+      GroupId: !Ref ADBSecurityGroup
+      IpProtocol: tcp
+      CidrIp: !Ref AppFlowIPRange2
+      ToPort: 5439
+
+  ADBLambdaSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: ADBSecurityGroup
+    Properties:
+      Description: Lambda to communicate with the redshift
+      FromPort: 5439
+      GroupId: !Ref ADBSecurityGroup
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref LambdaSecurityGroup
+      ToPort: 5439
+
+  RedshiftClusterSubnetGroup:
+    Type: 'AWS::Redshift::ClusterSubnetGroup'
+    Properties:
+      Description: ClusterSubnetGroup for Datalake
+      SubnetIds:
+        - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-DatalakeSubnetGroup'
+
+  RedshiftSpectrumRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-Redshift-Spectrum-Service-Role'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - redshift.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+        - "arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess"
+        - "arn:aws:iam::aws:policy/AmazonAthenaFullAccess"
+      Path: /
+
+  RedshiftSprectrumPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: RedshiftSpectrumRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:*
+          - lakeformation:GetDataAccess
+          - glue:*
+          - kms:*
+          Resource: "*"
+
+  GlueServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub 'AWSGlueServiceRole-${EnvironmentPrefix}-datalake'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - glue.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+        - "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
+      Path: /
+
+  GluePermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: GlueServiceRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - kms:Decrypt
+          - iam:PassRole
+          Resource: "*"
+
+  LambdaSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-datalake-Lambda-SG'
+      GroupDescription: Security group for lambda
+      VpcId: !Ref VPC
+
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+      Path: /
+
+  LabmdaPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: LambdaExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetResourcePolicy
+          - secretsmanager:GetSecretValue
+          - secretsmanager:DescribeSecret
+          - secretsmanager:ListSecretVersionIds
+          Resource: "*"
+
+  Psycopg2Layer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      CompatibleRuntimes:
+        - python3.7
+      Content:
+        S3Bucket: !Sub ${LambdaS3BucketName}
+        S3Key: !Sub ${DWHPsycopg2S3FileName}
+      Description: python psycopg2 layer
+      LayerName: python-psycopg2
+
+  DWHLoadLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentPrefix}-dwh-load-lambda'
+      Runtime: python3.7
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: lambda_function.lambda_handler
+      MemorySize: !Ref DWHLoadLambdaMemorySizeMB
+      Timeout: !Ref DWHLoadLambdaTimeoutSeconds
+      KmsKeyArn: !Ref LambdaKeyArn
+      Layers:
+        - !Ref Psycopg2Layer
+      Environment:
+        Variables:
+          redshift_secret_name: !Sub '${EnvironmentPrefix}-DataLake-Redshift-Password'
+      Code:
+        S3Bucket: !Sub ${LambdaS3BucketName}
+        S3Key: !Sub ${DWHLoadLambdaS3FileName}
+      Description: Lambda function for DWH Load data.
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref Subnet04
+          - !Ref Subnet05
+          - !Ref Subnet06
+
+  AlmisLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/AWSDataPipeline_FullAccess'
+      Path: /
+
+  AlmisLabmdaPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: AlmisLambdaExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetResourcePolicy
+          - secretsmanager:GetSecretValue
+          - secretsmanager:DescribeSecret
+          - secretsmanager:ListSecretVersionIds
+          Resource: "*"
+
+  AlmisFilesLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentPrefix}-dwh-almis-files-lambda'
+      Runtime: python3.7
+      Role: !GetAtt AlmisLambdaExecutionRole.Arn
+      Handler: lambda_function.lambda_handler
+      MemorySize: !Ref DWHAlmisLambdaMemorySizeMB
+      Timeout: !Ref DWHAlmisLambdaTimeoutSeconds
+      KmsKeyArn: !Ref LambdaKeyArn
+      Layers:
+        - !Ref Psycopg2Layer
+      Environment:
+        Variables:
+          redshift_secret_name: !Sub '${EnvironmentPrefix}-DataLake-Redshift-Password'
+          s3_bucket_name: !Ref SFTPS3Bucket
+      Code:
+        S3Bucket: !Sub ${LambdaS3BucketName}
+        S3Key: !Sub ${DWHAlmisLambdaS3FileName}
+      Description: Lambda function for Almis filtering.
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref Subnet04
+          - !Ref Subnet05
+          - !Ref Subnet06
+
+  CustomResourceLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonRedshiftFullAccess'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Path: /
+
+  CustomResourceLambdaPermissionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Path: /
+      Roles:
+        - Ref: CustomResourceLambdaExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - kms:*
+          Resource: "*"
+
+Outputs:
+  SubnetIds:
+    Description: All subnets in the VPC
+    Value: !Join
+      - ','
+      - - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-SubnetIds"
+
+  PublicSubnetIds:
+    Description: All subnets in the VPC
+    Value: !Join
+      - ','
+      - - !Ref Subnet01
+        - !Ref Subnet02
+        - !Ref Subnet03
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-PublicSubnetIds"
+
+  PipelineSubnetId:
+    Description: Datapipeline instance subnet
+    Value: !Ref Subnet04
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-PipelineSubnetId"
+
+  VpcId:
+    Description: The VPC Id
+    Value: !Ref VPC
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-VpcId"
+
+  AllSubnetIds:
+    Description: All subnets in the VPC
+    Value: !Join
+      - ','
+      - - !Ref Subnet01
+        - !Ref Subnet02
+        - !Ref Subnet03
+        - !Ref Subnet04
+        - !Ref Subnet05
+        - !Ref Subnet06
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-AllSubnetIds"
+
+  NodeInstanceProfile:
+    Description: Data Server NodeInstanceProfile
+    Value: !Ref NodeInstanceProfile
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-NodeInstanceProfile"
+
+  NodeSecurityGroup:
+    Description: The security group for the node group
+    Value: !Ref NodeSecurityGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-NodeSecurityGroup"
+
+  S3Bucket:
+    Description: Name of the S3 Bucket
+    Value: !Ref S3Bucket
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-S3Bucket"
+
+  GlueServiceRoleArn:
+    Description: Glue Service Role
+    Value: !GetAtt GlueServiceRole.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-GlueServiceRoleArn"
+
+  RedshiftSpectrumRoleArn:
+    Description: Redshift Spectrum Role
+    Value: !GetAtt RedshiftSpectrumRole.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-RedshiftSpectrumRoleArn"
+
+  CustomResourceLambdaExecutionRoleArn:
+    Description: Custom Resource Lambda Execution Role
+    Value: !GetAtt CustomResourceLambdaExecutionRole.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-CustomResourceLambdaExecutionRoleArn"
+
+  DWHLoadLambdaFunctionArn:
+    Description: DWH lambda function arn
+    Value: !GetAtt DWHLoadLambdaFunction.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-DWHLoadLambdaFunctionArn"
+
+  AlmisLambdaFunctionArn:
+    Description: Almis lambda function
+    Value: !GetAtt AlmisFilesLambdaFunction.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-AlmisLambdaFunctionArn"
+
+  ADBSecurityGroup:
+    Description: The security group for the node group
+    Value: !Ref ADBSecurityGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-ADBSecurityGroup"

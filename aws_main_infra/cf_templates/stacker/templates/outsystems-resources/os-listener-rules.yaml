@@ -1,0 +1,553 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: OutSystems Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  TargetGroup:
+    Type: String
+    Description: TargetGroup ID
+  HTTPSListener:
+    Type: String
+    Description: HTTPSListener ID
+
+Conditions:
+  IsDevEnv: !Equals [!Ref EnvironmentPrefix, 'dev']
+  IsNotDevEnv: !Not [!Equals [!Ref EnvironmentPrefix, 'dev']]
+  IsNotProdEnv: !Not [!Equals [!Ref EnvironmentPrefix, 'prod']]
+
+Resources:
+
+  APIBlockHTTPSListenerRule:
+    Condition: IsNotDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: 403
+            ContentType: application/json
+            MessageBody: '{"Status" : 403, "Message" : "Not authorized to access this path."}'
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /IL_API_Exposed/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 100
+
+  AllowDevHTTPSListenerRule1:
+    Condition: IsNotProdEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ServiceCenter
+              - /ServiceCenter/*
+              - /Users
+              - /Users/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 20
+
+  AllowHTTPSListenerRule2:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /Registration
+              - /Registration/*
+              - /Home
+              - /Home/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 21
+
+  AllowHTTPSListenerRule3:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /Application
+              - /Application/*
+              - /Customers_Admin
+              - /Customers_Admin/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 22
+
+  AllowHTTPSListenerRule4:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /Accounts_Admin
+              - /Accounts_Admin/*
+              - /Applications_Admin
+              - /Applications_Admin/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 23
+
+  AllowHTTPSListenerRule5:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /Common_Admin
+              - /Common_Admin/*
+              - /Products_Admin
+              - /Products_Admin/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 24
+
+  AllowHTTPSListenerRule6:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /Common_UI
+              - /Common_UI/*
+              - /Arch_BaseTypes
+              - /Arch_BaseTypes/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 25
+
+  AllowHTTPSListenerRule7:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ArPrEnv_Arch_Col
+              - /ArPrEnv_Arch_Col/*
+              - /ArPrEnv_Code_Col
+              - /ArPrEnv_Code_Col/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 26
+
+  AllowHTTPSListenerRule8:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ArPrEnv_Perf_Col
+              - /ArPrEnv_Perf_Col/*
+              - /ArPrEnvironment
+              - /ArPrEnvironment/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 27
+
+  AllowDevHTTPSListenerRule2:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /test
+              - /test/*
+              - /content
+              - /content/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 29
+
+  AllowDevExtraHTTPSListenerRule1:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /Template_PhoneApp
+              - /Template_PhoneApp/*
+              - /Template_ReactiveWebApp
+              - /Template_ReactiveWebApp/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 30
+
+  AllowDevExtraHTTPSListenerRule2:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /Template_TabletApp
+              - /Template_TabletApp/*
+              - /Template_TraditionalWeb
+              - /Template_TraditionalWeb/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 31
+
+  AllowDevExtraHTTPSListenerRule3:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /TemplateManager
+              - /TemplateManager/*
+              - /UsersServices
+              - /UsersServices/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 32
+
+  AllowDevExtraHTTPSListenerRule4:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /SOAPDevService
+              - /SOAPDevService/*
+              - /ScreenTemplatesMobile
+              - /ScreenTemplatesMobile/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 33
+
+  AllowDevExtraHTTPSListenerRule5:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ScreenTemplatesReactive
+              - /ScreenTemplatesReactive/*
+              - /ScreenTemplatesWeb
+              - /ScreenTemplatesWeb/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 34
+
+  AllowDevExtraHTTPSListenerRule6:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /SecurityUtils
+              - /SecurityUtils/*
+              - /server.api
+              - /server.identity
+      ListenerArn: !Ref HTTPSListener
+      Priority: 35
+
+  AllowDevExtraHTTPSListenerRule7:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /SAPDevService
+              - /SAPDevService/*
+              - /RichWidgets
+              - /RichWidgets/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 36
+
+  AllowDevExtraHTTPSListenerRule8:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /RESTDevService
+              - /RESTDevService/*
+              - /OutSystemsSampleDataDB
+              - /OutSystemsSampleDataDB/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 37
+
+  AllowDevExtraHTTPSListenerRule9:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /OutSystemsUIWeb
+              - /OutSystemsUIWeb/*
+              - /pdfJSViewerReactive
+              - /pdfJSViewerReactive/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 38
+
+  AllowDevExtraHTTPSListenerRule10:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /PerformanceProbe
+              - /PerformanceProbe/*
+              - /PreviewInDevices
+              - /PreviewInDevices/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 39
+
+  AllowDevExtraHTTPSListenerRule11:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /NativeAppBuilder
+              - /NativeAppBuilder/*
+              - /DEPRECATED_OutSystemsSampleData
+              - /DEPRECATED_OutSystemsSampleData/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 40
+
+  AllowDevExtraHTTPSListenerRule12:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /DBCleaner_API
+              - /DBCleaner_API/*
+              - /DBCleaner
+              - /DBCleaner/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 41
+
+  AllowDevExtraHTTPSListenerRule13:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ChartingServicesCore
+              - /ChartingServicesCore/*
+              - /Charts
+              - /Charts/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 42
+
+  AllowDevExtraHTTPSListenerRule14:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ChartsMobile
+              - /ChartsMobile/*
+              - /CloneOfCustomScreenTemplatesReactiv
+              - /CloneOfCustomScreenTemplatesReactiv/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 43
+
+  AllowDevExtraHTTPSListenerRule15:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ADAuthProvider
+              - /ADAuthProvider/*
+              - /appfeedbackapi
+              - /appfeedbackapi/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 44
+
+  AllowDevExtraHTTPSListenerRule16:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /AppFeedbackPlugin
+              - /AppFeedbackPlugin/*
+              - /ECT_Provider
+              - /ECT_Provider/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 45
+
+  AllowDevExtraHTTPSListenerRule17:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /EPA_Taskbox
+              - /EPA_Taskbox/*
+              - /EmptyModule
+              - /EmptyModule/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 46
+
+  AllowDevExtraHTTPSListenerRule18:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /ADAuthProvider
+              - /ADAuthProvider/*
+              - /EmptyModuleWeb
+              - /EmptyModuleWeb/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 47
+
+  AllowDevExtraHTTPSListenerRule19:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /discovery
+              - /discovery/*
+              - /DiscoveryProbe
+              - /DiscoveryProbe/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 48
+
+  AllowDevExtraHTTPSListenerRule20:
+    Condition: IsDevEnv
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /Discovery_Layout_CW
+              - /Discovery_Layout_CW/*
+              - /Discovery
+              - /Discovery/*
+      ListenerArn: !Ref HTTPSListener
+      Priority: 49

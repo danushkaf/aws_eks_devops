@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: OutSystems Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  OSLBDNSName:
+    Type: String
+    Description: DNSName for OutSystems Fronted LB
+  OSLBDNSHostedZoneID:
+    Type: String
+    Description: HostedZoneId for OutSystems Fronted LB
+  OutSystemsHostname:
+    Type: String
+    Default: lifetime.portal.xyz.com
+    Description: Public Hostname for OutSystems
+  HostedZoneName:
+    Type: String
+    Default: portal.xyz.com.
+    Description: Public Hosted Zone Name
+
+Conditions:
+  IsProdEnv: !Equals [!Ref EnvironmentPrefix, 'prod']
+  IsNotProdEnv: !Not [!Equals [!Ref EnvironmentPrefix, 'prod']]
+
+Resources:
+  DummyRole:
+    Condition: IsNotProdEnv
+    Type: "AWS::IAM::Role"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-os-lifetime-dummy-role'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+
+  OSLBDNSRecord:
+    Condition: IsProdEnv
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+        DNSName: !Ref OSLBDNSName
+        EvaluateTargetHealth: true
+        HostedZoneId:  !Ref OSLBDNSHostedZoneID
+      Name: !Ref OutSystemsHostname
+      HostedZoneName:  !Ref HostedZoneName
+      Type: A

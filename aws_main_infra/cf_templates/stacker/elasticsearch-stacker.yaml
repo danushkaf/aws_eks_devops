@@ -1,0 +1,175 @@
+# this is an minimal `stack config` file.
+# http://stacker.readthedocs.io/en/latest/config.html
+#
+# The stacker namespace, provided by the environment file.
+# http://stacker.readthedocs.io/en/latest/config.html#namespace-delimiter
+namespace: ${namespace}
+
+# The bucket where stacker stores generated CloudFormation templates.
+# http://stacker.readthedocs.io/en/latest/config.html#s3-bucket
+stacker_bucket: '${stacker_bucket}'
+
+# This sets the syspath to include the local path, which allows access to the
+# blueprints in the blueprints directory.
+# http://stacker.readthedocs.io/en/latest/config.html#module-paths
+sys_path: .
+
+# The stacks key accepts a list of stack declarations.
+# http://stacker.readthedocs.io/en/latest/config.html#stacks
+# variables which have default values need not be specified here. if specified, values speciifed here will
+# override the values in CF template
+stacks:
+
+  - name: ${non_production_elasticsearch_stack_name}
+    template_path: ${template_path}/templates/elasticsearch/xyz-es-secured.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EsDomainName: ${non_production_elasticsearch_domain_name}
+      EsInstanceCount: ${non_production_elasticsearch_instance_count}
+      EsAvailZoneCount: ${non_production_elasticsearch_az_count}
+      EBSSize: ${non_production_elasticsearch_ebs_size}
+      DataInstanceType: ${non_production_elasticsearch_data_instance_type}
+      IsDedicatedMasterEnabled: ${non_production_elasticsearch_is_dedicated_master_enabled}
+      PrivateSubnets: ${shared_private_subnets}
+      VPCID: ${shared_vpc_id}
+      BastionSG: ${shared_bastion_sg}
+
+  - name: ${development_log_to_es_stack_name}
+    template_path: ${template_path}/templates/elasticsearch/xyz-log-to-es-v-0-1.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentName: ${development_environment_name}
+      ESClusterDomainEP: ${output ${non_production_elasticsearch_stack_name}::DomainEndpoint}
+      ClusterName: ${development_eks_cluster_name}
+      S3BucketName: ${lambda_code_s3_bucket_name}
+      MemorySizeMB: ${development_logs_to_es_memory}
+      LambdaTimeoutSeconds: ${development_logs_to_es_timeout}
+      S3FileName: ${lambda_logs_to_es_filename}
+      LabmdaRoleArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaBasicExecutionRole}
+      LambdaKeyArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaKey}
+      PrivateSubnets: ${shared_private_subnets}
+      ESSecurityGroup: ${output ${non_production_elasticsearch_stack_name}::ESSecurityGroup}
+      FilteringNamespace: ${development_elasticsearch_namespace}
+
+  - name: ${development_rollover_stack_name}
+    template_path: ${template_path}/templates/elasticsearch/xyz-elasticsearch-log-rollover-v-0-1.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentName: ${development_environment_name}
+      ESClusterDomainEP: ${output ${non_production_elasticsearch_stack_name}::DomainEndpoint}
+      ClusterName: ${development_eks_cluster_name}
+      S3BucketName: ${lambda_code_s3_bucket_name}
+      MemorySizeMB: ${development_rollover_memory}
+      LambdaTimeoutSeconds: ${development_rollover_timeout}
+      S3FileName: ${lambda_rollover_logs_filename}
+      LabmdaRoleArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaBasicExecutionRole}
+      CronExpression: ${development_rollover_cron}
+      LambdaKeyArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaKey}
+      PrivateSubnets: ${shared_private_subnets}
+      ESSecurityGroup: ${output ${non_production_elasticsearch_stack_name}::ESSecurityGroup}
+
+  - name: ${development_delete_old_logs_stack_name}
+    template_path: ${template_path}/templates/elasticsearch/xyz-elasticsearch-delete-old-logs-v-0-1.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentName: ${development_environment_name}
+      ESClusterDomainEP: ${output ${non_production_elasticsearch_stack_name}::DomainEndpoint}
+      ClusterName: ${development_eks_cluster_name}
+      S3BucketName: ${lambda_code_s3_bucket_name}
+      MemorySizeMB: ${development_delete_old_logs_memory}
+      LambdaTimeoutSeconds: ${development_delete_old_logs_timeout}
+      S3FileName: ${lambda_delete_old_logs_filename}
+      LabmdaRoleArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaBasicExecutionRole}
+      CronExpression: ${development_delete_old_logs_cron}
+      LogRetentionTimePeriod: ${development_log_retention_time_days}
+      LambdaKeyArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaKey}
+      PrivateSubnets: ${shared_private_subnets}
+      ESSecurityGroup: ${output ${non_production_elasticsearch_stack_name}::ESSecurityGroup}
+
+  - name: ${qa_log_to_es_stack_name}
+    template_path: ${template_path}/templates/elasticsearch/xyz-log-to-es-v-0-1.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentName: ${qa_environment_name}
+      ESClusterDomainEP: ${output ${non_production_elasticsearch_stack_name}::DomainEndpoint}
+      ClusterName: ${qa_eks_cluster_name}
+      S3BucketName: ${lambda_code_s3_bucket_name}
+      MemorySizeMB: ${qa_logs_to_es_memory}
+      LambdaTimeoutSeconds: ${qa_logs_to_es_timeout}
+      S3FileName: ${lambda_logs_to_es_filename}
+      LabmdaRoleArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaBasicExecutionRole}
+      LambdaKeyArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaKey}
+      PrivateSubnets: ${shared_private_subnets}
+      ESSecurityGroup: ${output ${non_production_elasticsearch_stack_name}::ESSecurityGroup}
+      FilteringNamespace: ${qa_elasticsearch_namespace}
+
+  - name: ${qa_rollover_stack_name}
+    template_path: ${template_path}/templates/elasticsearch/xyz-elasticsearch-log-rollover-v-0-1.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentName: ${qa_environment_name}
+      ESClusterDomainEP: ${output ${non_production_elasticsearch_stack_name}::DomainEndpoint}
+      ClusterName: ${qa_eks_cluster_name}
+      S3BucketName: ${lambda_code_s3_bucket_name}
+      MemorySizeMB: ${qa_rollover_memory}
+      LambdaTimeoutSeconds: ${qa_rollover_timeout}
+      S3FileName: ${lambda_rollover_logs_filename}
+      LabmdaRoleArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaBasicExecutionRole}
+      CronExpression: ${qa_rollover_cron}
+      LambdaKeyArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaKey}
+      PrivateSubnets: ${shared_private_subnets}
+      ESSecurityGroup: ${output ${non_production_elasticsearch_stack_name}::ESSecurityGroup}
+
+  - name: ${qa_delete_old_logs_stack_name}
+    template_path: ${template_path}/templates/elasticsearch/xyz-elasticsearch-delete-old-logs-v-0-1.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentName: ${qa_environment_name}
+      ESClusterDomainEP: ${output ${non_production_elasticsearch_stack_name}::DomainEndpoint}
+      ClusterName: ${qa_eks_cluster_name}
+      S3BucketName: ${lambda_code_s3_bucket_name}
+      MemorySizeMB: ${qa_delete_old_logs_memory}
+      LambdaTimeoutSeconds: ${qa_delete_old_logs_timeout}
+      S3FileName: ${lambda_delete_old_logs_filename}
+      LabmdaRoleArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaBasicExecutionRole}
+      CronExpression: ${qa_delete_old_logs_cron}
+      LogRetentionTimePeriod: ${qa_log_retention_time_days}
+      LambdaKeyArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaKey}
+      PrivateSubnets: ${shared_private_subnets}
+      ESSecurityGroup: ${output ${non_production_elasticsearch_stack_name}::ESSecurityGroup}
+
+  - name: ${non_production_backup_indices_stack_name}
+    template_path: ${template_path}/templates/elasticsearch/xyz-es-snapshot-v-0-1.yaml
+    region: ${region}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentName: ${non_production_environment_name}
+      ESClusterDomainEP: ${output ${non_production_elasticsearch_stack_name}::DomainEndpoint}
+      S3BucketName: ${lambda_code_s3_bucket_name}
+      S3FileName: ${lambda_snapshots_logs_filename}
+      SnapshotRegistrationS3FileName: ${lambda_snapshots_register_logs_filename}
+      LabmdaRoleArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaBasicExecutionRole}
+      LabmdaRoleName:  ${output ${non_production_elasticsearch_stack_name}::LambdaBasicExecutionRoleName}
+      CronExpression: ${non_production_backup_index_cron}
+      MemorySizeMB: ${non_production_backup_index_memory}
+      LambdaTimeoutSeconds: ${non_production_backup_index_timeout}
+      RegistrationMemorySizeMB: ${non_production_backup_index_register_memory}
+      RegistrationLambdaTimeoutSeconds: ${non_production_backup_index_register_timeout}
+      EnableReplication: ${non_production_elasticsearch_replication_enabled}
+      LambdaKeyArn:  ${output ${non_production_elasticsearch_stack_name}::LambdaKey}
+      PrivateSubnets: ${shared_private_subnets}
+      ESSecurityGroup: ${output ${non_production_elasticsearch_stack_name}::ESSecurityGroup}
+
+  - name: ${production_elasticsearch_dr_stack_name}
+    template_path: ${template_path}/templates/elasticsearch/xyz-es-index-crr.yaml
+    region: ${drregion}
+    profile: ${shared_profile}
+    variables:
+      EnvironmentPrefix: ${environment_prefix}

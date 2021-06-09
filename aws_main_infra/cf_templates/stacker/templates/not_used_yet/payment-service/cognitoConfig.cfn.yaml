@@ -1,0 +1,311 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "This has cognito userpools for SF"
+Parameters:
+  EnvironmentPrefix:
+    Type: String 
+    AllowedValues:
+      - dev
+      - qa
+      - uat
+      - prod
+  SFCognitoDomain:
+    Type: String
+    Default: sf-domain
+  TempPasswordValidityDays:
+    Type: Number
+    Default: 7
+Resources:
+    SFCognitoUserPool:
+        Type: "AWS::Cognito::UserPool"
+        Properties:
+            UserPoolName: !Sub "${EnvironmentPrefix}-SF-User-Pool"
+            Policies: 
+                PasswordPolicy: 
+                    MinimumLength: 8
+                    RequireUppercase: true
+                    RequireLowercase: true
+                    RequireNumbers: true
+                    RequireSymbols: true
+                    TemporaryPasswordValidityDays: !Ref TempPasswordValidityDays
+            Schema: 
+              - 
+                Name: "sub"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: false
+                Required: true
+                StringAttributeConstraints: 
+                    MinLength: "1"
+                    MaxLength: "2048"
+              - 
+                Name: "name"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "given_name"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "family_name"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "middle_name"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "nickname"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "preferred_username"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "profile"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "picture"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "website"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "email"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: true
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "email_verified"
+                AttributeDataType: "Boolean"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+              - 
+                Name: "gender"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "birthdate"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "10"
+                    MaxLength: "10"
+              - 
+                Name: "zoneinfo"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "locale"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "phone_number"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "address"
+                AttributeDataType: "String"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                StringAttributeConstraints: 
+                    MinLength: "0"
+                    MaxLength: "2048"
+              - 
+                Name: "updated_at"
+                AttributeDataType: "Number"
+                DeveloperOnlyAttribute: false
+                Mutable: true
+                Required: false
+                NumberAttributeConstraints: 
+                    MinValue: "0"
+            AutoVerifiedAttributes: 
+              - "email"
+            MfaConfiguration: "OFF"
+            EmailConfiguration: 
+                EmailSendingAccount: "COGNITO_DEFAULT"
+            AdminCreateUserConfig: 
+                AllowAdminCreateUserOnly: false
+            UserPoolTags: {}
+            AccountRecoverySetting: 
+                RecoveryMechanisms: 
+                  - 
+                    Priority: 1
+                    Name: "verified_email"
+                  - 
+                    Priority: 2
+                    Name: "verified_phone_number"
+            UsernameConfiguration: 
+                CaseSensitive: false
+            VerificationMessageTemplate: 
+                DefaultEmailOption: "CONFIRM_WITH_CODE"
+
+    SFCognitoUserPoolDomain:
+      Type: "AWS::Cognito::UserPoolDomain"
+      Properties:
+        UserPoolId: !Ref SFCognitoUserPool
+        Domain: !Join ['-', [!Ref EnvironmentPrefix, !Ref SFCognitoDomain] ] 
+
+    SFUserPoolAccountsResourceServer:
+      Type: "AWS::Cognito::UserPoolResourceServer"
+      Properties:
+        UserPoolId: !Ref SFCognitoUserPool
+        Identifier: accounts
+        Scopes:
+          - 
+            ScopeName: post 
+            ScopeDescription: Create
+          - 
+            ScopeName: get
+            ScopeDescription: Get
+          -
+            ScopeName: del
+            ScopeDescription: Delete
+          -
+            ScopeName: put
+            ScopeDescription: Update
+          - 
+            ScopeName: patch
+            ScopeDescription: Patch
+        Name: accounts
+
+    SFUserPoolTransactionsResourceServer:
+      Type: "AWS::Cognito::UserPoolResourceServer"
+      Properties:
+        UserPoolId: !Ref SFCognitoUserPool
+        Identifier: transactions
+        Scopes:
+          - 
+            ScopeName: post 
+            ScopeDescription: Create
+        Name: transactions        
+
+    SFUserPoolNotificationsResourceServer:
+      Type: "AWS::Cognito::UserPoolResourceServer"
+      Properties:
+        UserPoolId: !Ref SFCognitoUserPool
+        Identifier: notifications
+        Scopes:
+          - 
+            ScopeName: read 
+            ScopeDescription: Read notifications
+          - 
+            ScopeName: send
+            ScopeDescription: Send notification
+        Name: notifications
+
+    SFUserPoolProductsResourceServer:
+      Type: "AWS::Cognito::UserPoolResourceServer"
+      Properties:
+        UserPoolId: !Ref SFCognitoUserPool
+        Identifier: products
+        Scopes:
+          - 
+            ScopeName: read 
+            ScopeDescription: Read
+          - 
+            ScopeName: update
+            ScopeDescription: Update
+          -
+            ScopeName: create
+            ScopeDescription: Create
+          -
+            ScopeName: delete
+            ScopeDescription: Delete
+        Name: products
+    
+
+    SFCongnitoUserPoolAppClient:
+      Type: "AWS::Cognito::UserPoolClient"
+      Properties:
+        AllowedOAuthScopes:
+          - !Join [ "/", [ !Ref SFUserPoolAccountsResourceServer, post  ]  ] 
+          - !Join [ "/", [ !Ref SFUserPoolAccountsResourceServer, get  ]  ] 
+          - !Join [ "/", [ !Ref SFUserPoolNotificationsResourceServer, send  ]  ]
+        SupportedIdentityProviders:
+          - COGNITO
+        ClientName: SfClient
+        UserPoolId: !Ref SFCognitoUserPool
+        GenerateSecret: true
+        AllowedOAuthFlows:
+          - "client_credentials"
+
+
+
+

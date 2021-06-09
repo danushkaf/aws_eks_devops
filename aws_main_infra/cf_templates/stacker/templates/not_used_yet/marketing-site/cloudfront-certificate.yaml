@@ -1,0 +1,13 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Resources:
+  CertificateForMarketingWebsite:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: "*.www.xyz.co"
+      ValidationMethod: DNS
+
+Outputs:
+  CertificateForMarketingWebsite:
+    Value: !Ref CertificateForMarketingWebsite
+ 

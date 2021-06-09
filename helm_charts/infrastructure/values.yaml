@@ -1,0 +1,13 @@
+# Default values for infrastructure.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+clusterName: Development
+environmentName: development
+logRoleARN: xxx
+fluentdVersion: v1.7.3-debian-cloudwatch-1.0
+region: us-east-2
+autoscalingGroup: xxx
+scaleMin: 3
+scaleMax: 7
+clusterAutoScalerReplicaCount: 3
+clamAVRepo: xxx

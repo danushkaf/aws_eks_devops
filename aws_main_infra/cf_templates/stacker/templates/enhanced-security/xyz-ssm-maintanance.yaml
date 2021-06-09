@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Provision SSM Components
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+Resources:
+  UpdateLinuxInstancesSSMAgentMaintenanceWindow:
+    Type: AWS::SSM::MaintenanceWindow
+    Properties:
+      AllowUnassociatedTargets: false
+      Cutoff: 1
+      Duration: 2
+      Description: Maintenance Window to update linux instances
+      Name: !Sub '${EnvironmentPrefix}-UpdateLinuxInstancesSSMAgentMaintenanceWindow'
+      Schedule: cron(0 0 ? * SAT *)
+      ScheduleTimezone: Europe/London
+
+  UpdateLinuxInstancesSSMAgentMaintenanceWindowTarget:
+    Type: AWS::SSM::MaintenanceWindowTarget
+    Properties:
+      ResourceType: INSTANCE
+      Targets:
+        - Key: 'tag:Patch Group'
+          Values:
+            - AmazonLinux2
+      WindowId: !Ref UpdateLinuxInstancesSSMAgentMaintenanceWindow
+
+  UpdateLinuxInstancesSSMAgentTask:
+    Type: AWS::SSM::MaintenanceWindowTask
+    Properties:
+      Description: Apply OS patches on instances in target
+      MaxConcurrency: 7
+      MaxErrors: 1
+      Priority: 1
+      TaskType: RUN_COMMAND
+      WindowId: !Ref UpdateLinuxInstancesSSMAgentMaintenanceWindow
+      TaskArn: AWS-UpdateSSMAgent
+      Targets:
+        - Key: WindowTargetIds
+          Values:
+            - !Ref UpdateLinuxInstancesSSMAgentMaintenanceWindowTarget
+
+  UpdateLinuxInstancesMaintenanceWindow:
+    Type: AWS::SSM::MaintenanceWindow
+    Properties:
+      AllowUnassociatedTargets: false
+      Cutoff: 1
+      Duration: 5
+      Description: Maintenance Window to update linux instances
+      Name: !Sub '${EnvironmentPrefix}-UpdateLinuxInstancesMaintenanceWindow'
+      Schedule: cron(0 3 ? * SUN *)
+      ScheduleTimezone: Europe/London
+
+  UpdateLinuxInstancesMaintenanceWindowTarget:
+    Type: AWS::SSM::MaintenanceWindowTarget
+    Properties:
+      ResourceType: INSTANCE
+      Targets:
+        - Key: 'tag:Patch Group'
+          Values:
+            - AmazonLinux2
+      WindowId: !Ref UpdateLinuxInstancesMaintenanceWindow
+
+  UpdateLinuxInstancesTask:
+    Type: AWS::SSM::MaintenanceWindowTask
+    Properties:
+      Description: Apply OS patches on instances in target
+      MaxConcurrency: 1
+      MaxErrors: 1
+      Priority: 0
+      TaskType: RUN_COMMAND
+      WindowId: !Ref UpdateLinuxInstancesMaintenanceWindow
+      TaskArn: AWS-RunPatchBaseline
+      TaskInvocationParameters:
+        MaintenanceWindowRunCommandParameters:
+          Comment: Running security updates for OS with reboot
+          Parameters:
+            Operation:
+              - Install
+            RebootOption:
+              - RebootIfNeeded
+      Targets:
+        - Key: WindowTargetIds
+          Values:
+            - !Ref UpdateLinuxInstancesMaintenanceWindowTarget
+
+  xyzPatchBaseline:
+    Type: AWS::SSM::PatchBaseline
+    Properties:
+      Name: !Sub 'xyz-AmazonLinux2DefaultPatchBaseline-${EnvironmentPrefix}'
+      Description: Custom baseline for amazon linux2 instances
+      OperatingSystem: AMAZON_LINUX_2
+      Tags:
+        - Key: Name
+          Value: !Sub "xyz-AmazonLinux2DefaultPatchBaseline-${EnvironmentPrefix}"
+      PatchGroups:
+        - AmazonLinux2
+      ApprovalRules:
+        PatchRules:
+        - PatchFilterGroup:
+            PatchFilters:
+            - Values:
+              - Critical
+              - Important
+              - Medium
+              - Low
+              Key: SEVERITY
+            - Values:
+              - Security
+              Key: CLASSIFICATION
+          ApproveAfterDays: 7
+        - PatchFilterGroup:
+            PatchFilters:
+            - Values:
+              - Bugfix
+              Key: CLASSIFICATION
+          ApproveAfterDays: 7
+
+  UpdateWindowsInstancesSSMAgentMaintenanceWindow:
+    Type: AWS::SSM::MaintenanceWindow
+    Properties:
+      AllowUnassociatedTargets: false
+      Cutoff: 1
+      Duration: 2
+      Description: Maintenance Window to update windows instances
+      Name: !Sub '${EnvironmentPrefix}-UpdateWindowsInstancesSSMAgentMaintenanceWindow'
+      Schedule: cron(0 0 ? * SAT *)
+      ScheduleTimezone: Europe/London
+
+  UpdateWindowsInstancesSSMAgentMaintenanceWindowTarget:
+    Type: AWS::SSM::MaintenanceWindowTarget
+    Properties:
+      ResourceType: INSTANCE
+      Targets:
+        - Key: 'tag:Patch Group'
+          Values:
+            - Windows
+      WindowId: !Ref UpdateWindowsInstancesSSMAgentMaintenanceWindow
+
+  UpdateWindowsInstancesSSMAgentTask:
+    Type: AWS::SSM::MaintenanceWindowTask
+    Properties:
+      Description: Apply OS patches on instances in target
+      MaxConcurrency: 7
+      MaxErrors: 1
+      Priority: 1
+      TaskType: RUN_COMMAND
+      WindowId: !Ref UpdateWindowsInstancesSSMAgentMaintenanceWindow
+      TaskArn: AWS-UpdateSSMAgent
+      Targets:
+        - Key: WindowTargetIds
+          Values:
+            - !Ref UpdateWindowsInstancesSSMAgentMaintenanceWindowTarget
+
+  UpdateWindowsInstancesMaintenanceWindow:
+    Type: AWS::SSM::MaintenanceWindow
+    Properties:
+      AllowUnassociatedTargets: false
+      Cutoff: 1
+      Duration: 5
+      Description: Maintenance Window to update windows instances
+      Name: UpdateWindowsInstancesMaintenanceWindow
+      Schedule: cron(0 3 ? * SUN *)
+      ScheduleTimezone: Europe/London
+
+  UpdateWindowsInstancesMaintenanceWindowTarget:
+    Type: AWS::SSM::MaintenanceWindowTarget
+    Properties:
+      ResourceType: INSTANCE
+      Targets:
+        - Key: 'tag:Patch Group'
+          Values:
+            - Windows
+      WindowId: !Ref UpdateWindowsInstancesMaintenanceWindow
+
+  UpdateWindowsInstancesTask:
+    Type: AWS::SSM::MaintenanceWindowTask
+    Properties:
+      Description: Apply OS patches on instances in target
+      MaxConcurrency: 1
+      MaxErrors: 1
+      Priority: 0
+      TaskType: RUN_COMMAND
+      WindowId: !Ref UpdateWindowsInstancesMaintenanceWindow
+      TaskArn: AWS-RunPatchBaseline
+      TaskInvocationParameters:
+        MaintenanceWindowRunCommandParameters:
+          Comment: Running security updates for OS with no reboot
+          Parameters:
+            Operation:
+              - Install
+      Targets:
+        - Key: WindowTargetIds
+          Values:
+            - !Ref UpdateWindowsInstancesMaintenanceWindowTarget

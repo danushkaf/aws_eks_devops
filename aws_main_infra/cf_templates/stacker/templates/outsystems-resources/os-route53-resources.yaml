@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: OutSystems Infrastructure Setup Template
+Parameters:
+  OSLBDNSName:
+    Type: String
+    Description: DNSName for OutSystems Fronted LB
+  OSLBDNSHostedZoneID:
+    Type: String
+    Description: HostedZoneId for OutSystems Fronted LB
+  OutSystemsHostname:
+    Type: String
+    Default: dev.portal.xyz.com
+    Description: Public Hostname for OutSystems
+  OutSystemsAPIHostname:
+    Type: String
+    Default: dev-api.portal.xyz.com
+    Description: Public API Hostname for OutSystems
+  HostedZoneName:
+    Type: String
+    Default: api.xyz.com.
+    Description: Public Hosted Zone Name
+
+Resources:
+  OSLBDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+        DNSName: !Ref OSLBDNSName
+        EvaluateTargetHealth: true
+        HostedZoneId:  !Ref OSLBDNSHostedZoneID
+      Name: !Ref OutSystemsHostname
+      HostedZoneName:  !Ref HostedZoneName
+      Type: A
+
+  OSAPILBDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+        DNSName: !Ref OSLBDNSName
+        EvaluateTargetHealth: true
+        HostedZoneId:  !Ref OSLBDNSHostedZoneID
+      Name: !Ref OutSystemsAPIHostname
+      HostedZoneName:  !Ref HostedZoneName
+      Type: A

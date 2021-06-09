@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create Log publish resources
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: 'development'
+    Description: Name Of The Environment
+  FilteringNamespace:
+    Type: String
+    Default: 'development'
+    Description: Namespace to filter
+  ESClusterDomainEP:
+    Type: String
+    Description: ES Cluster Domain Endpoint
+  ClusterName:
+    Type: String
+    Default: 'Development'
+    Description: Name Of The EKS Cluster
+  S3BucketName:
+    Type: String
+    Default: 'lambda-code-for-xyz-application-logs'
+    Description: Lambda Code zip file S3 bucket name
+  MemorySizeMB:
+    Type: Number
+    Default: 256
+    Description: Lambda max MemorySize in MB
+  LambdaTimeoutSeconds:
+    Type: Number
+    Default: 30
+    Description: Lambda timeout value
+  S3FileName:
+    Type: String
+    Default: 'logs-to-es.zip'
+    Description: Lambda Code zip filename in S3
+  LabmdaRoleArn:
+    Type: String
+    Description: Lambda Role Arn
+  LambdaKeyArn:
+    Type: String
+    Description: Arn of Lambda Key
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Configurations
+        Parameters:
+          - EnvironmentName
+          - ESClusterDomainEP
+          - ClusterName
+          - S3BucketName
+          - S3FileName
+          - LabmdaRoleArn
+          - MemorySizeMB
+          - LambdaTimeoutSeconds
+Resources:
+  LogsToElasticsearch:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub 'LogsToElasticsearch-${EnvironmentName}-${ClusterName}'
+      Runtime: nodejs12.x
+      Role: !Ref LabmdaRoleArn
+      Handler: index.handler
+      KmsKeyArn: !Ref LambdaKeyArn
+      Environment:
+        Variables:
+          elasticsearch_cluster_dns: !Ref ESClusterDomainEP
+          environment_name: !Ref EnvironmentName
+          filtering_namespace: !Ref FilteringNamespace
+      MemorySize: !Ref MemorySizeMB
+      Timeout: !Ref LambdaTimeoutSeconds
+      Code:
+        S3Bucket: !Sub ${S3BucketName}
+        S3Key: !Sub ${S3FileName}
+      Description: Invoke a function during stack creation.
+
+  CloudWatchSubscriptionFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - "LogsToElasticsearch"
+          - "Arn"
+      Action: 'lambda:InvokeFunction'
+      Principal: !Sub 'logs.${AWS::Region}.amazonaws.com'
+      SourceArn: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${EnvironmentName}/eks/${ClusterName}/containers:*'
+
+  SubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    DependsOn: CloudWatchSubscriptionFunctionPermission
+    Properties:
+      LogGroupName: !Sub '/${EnvironmentName}/eks/${ClusterName}/containers'
+      FilterPattern: ""
+      DestinationArn:
+        Fn::GetAtt:
+          - "LogsToElasticsearch"
+          - "Arn"

@@ -1,0 +1,366 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: OutSystems Automation Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  NodeGroup:
+    Type: String
+    Description: "OS Node Group Name"
+  TargetGroup:
+    Type: String
+    Description: "OS Server TargetGroup ID"
+  Email:
+    Type: String
+    Description: Provide an email address from DevOps/Admin team to send the alerts.
+  TargetGroupFullName:
+    Type: String
+    Description: "OS Server TargetGroup Name"
+  LoadBalancerFullName:
+    Type: String
+    Description: "OS Server LoadBalancer FullName"
+  LambdaKeyArn:
+    Type: String
+    Description: Arn of Lambda Key
+  NodeInstanceRole:
+    Type: String
+    Description: Input the ARN of the node security group of nodes in EKS cluster for this environment
+Resources:
+  EC2ASGLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+      - PolicyName: ec2-all
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+              - ec2:*
+              - autoscaling:*
+              - elasticloadbalancing:*
+            Resource: '*'
+      - PolicyName: cw-logs
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStreams
+            Resource: '*'
+      ManagedPolicyArns:
+      - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Path: /
+
+  CloudWatchEventDetachEC2FunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaOSEC2Action.Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: 'events.amazonaws.com'
+      SourceArn:
+        Fn::GetAtt:
+          - "OSInstanceCWRule"
+          - "Arn"
+
+  LambdaOSEC2Action:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentPrefix}-EC2OSActionFunction'
+      Runtime: python3.7
+      Role: !GetAtt EC2ASGLambdaExecutionRole.Arn
+      Handler: index.lambda_handler
+      MemorySize: 1024
+      Timeout: 60
+      KmsKeyArn: !Ref LambdaKeyArn
+      Environment:
+        Variables:
+          node_group_arn: !Ref NodeGroup
+          target_group_arn: !Ref TargetGroup
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          import json
+          import os
+          import time
+          node_group = os.environ['node_group_arn']
+          target_group = os.environ['target_group_arn']
+          autoscaling = boto3.client('autoscaling')
+          elbv2 = boto3.client('elbv2')
+          ec2 = boto3.client('ec2')
+          def lambda_handler(event, context):
+            if 'detail' not in event:
+              response = elbv2.describe_target_health(
+                TargetGroupArn=target_group,
+              )
+              target_healths = response['TargetHealthDescriptions']
+              for target_health in target_healths:
+                if target_health['TargetHealth']['State'] == 'unhealthy' or target_health['TargetHealth']['State'] == 'draining':
+                  instanceid = target_health['Target']['Id']
+                  instances = []
+                  instances.append(instanceid)
+                  ec2.stop_instances(InstanceIds=instances)
+                  while True:
+                    status_response = ec2.describe_instance_status(InstanceIds=instances)
+                    if status_response['InstanceStatuses'][0]['InstanceState']['Name'] == 'stopped':
+                      time.sleep(5)
+                      break
+                  ec2.start_instances(InstanceIds=instances)
+                  print('started your instances: ' + str(instances))
+            else:
+              if 'source' in event and event['source'] == "aws.ec2":
+                instanceid = event['detail']['instance-id']
+                instances = []
+                instances.append(instanceid)
+                ec2.start_instances(InstanceIds=instances)
+                print('started your instances: ' + str(instances))
+              else:
+                print('Not an EC2 event so skipping.')
+      Description: Invoke to start OS instance.
+
+  OSInstanceCWRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: 'Detach Out systems instance when get stopped'
+      EventPattern: '{ "source": [ "aws.ec2" ], "detail-type": [ "EC2 Instance State-change Notification" ], "detail": { "state": [ "stopped" ] } }'
+      State: 'ENABLED'
+      Targets:
+      - Id: !Sub '${EnvironmentPrefix}-TakeAction-OutSystems-Instance'
+        Arn: !GetAtt LambdaOSEC2Action.Arn
+      - Id: !Sub '${EnvironmentPrefix}-Notify-OutSystems-Instance'
+        Arn: !Ref SnsTopicForCWAlerts
+
+  CMKForSNSAndSQS:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: !Sub "This is ${EnvironmentPrefix} environment customer managed CMK for SQS and SNS."
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - sns.amazonaws.com
+                - events.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Principal:
+              AWS: !Ref NodeInstanceRole
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+  SnsTopicForCWAlerts:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${EnvironmentPrefix}-CW-OutSystems-Alerts"
+      KmsMasterKeyId:  !Ref CMKForSNSAndSQS
+      Subscription:
+      - Protocol: email
+        Endpoint: !Ref Email
+
+  SnsTopicPolicyForCWAlerts:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref SnsTopicForCWAlerts
+      PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Sid: DefaultPolicy
+            Principal:
+              AWS: "*"
+            Action:
+            - SNS:GetTopicAttributes
+            - SNS:SetTopicAttributes
+            - SNS:AddPermission
+            - SNS:RemovePermission
+            - SNS:DeleteTopic
+            - SNS:Subscribe
+            - SNS:ListSubscriptionsByTopic
+            - SNS:Publish
+            - SNS:Receive
+            Resource: !Ref SnsTopicForCWAlerts
+            Condition:
+              StringEquals:
+                AWS:SourceOwner: !Ref AWS::AccountId
+          - Effect: Allow
+            Sid: AllowSNSPublishFromEventBridge
+            Action:
+            - SNS:Publish
+            Resource: !Ref SnsTopicForCWAlerts
+            Principal:
+              Service: "events.amazonaws.com"
+
+  SNSInvokeFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - "LambdaOSEC2Action"
+          - "Arn"
+      Action: 'lambda:InvokeFunction'
+      Principal: 'sns.amazonaws.com'
+      SourceArn: !Ref SnsTopicForCWAlerts
+
+  SnsSubscriptionLambda:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref SnsTopicForCWAlerts
+      Protocol: lambda
+      Endpoint: !GetAtt LambdaOSEC2Action.Arn
+
+  UnhealthyHostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      MetricName: UnHealthyHostCount
+      Namespace: AWS/ApplicationELB
+      EvaluationPeriods: 1
+      Period: 60
+      ActionsEnabled: true
+      Statistic: Maximum
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: TargetGroup
+          Value: !Ref TargetGroupFullName
+        - Name: LoadBalancer
+          Value: !Ref LoadBalancerFullName
+      AlarmActions:
+        - !Ref SnsTopicForCWAlerts
+      AlarmDescription: If OutSystems Server goes unhealthy need to detach from ASG
+      AlarmName: !Sub "${EnvironmentPrefix}-OutSystems-UnhealthyHostAlarm"
+
+  UpdateWindowsInstancesSSMAgentMaintenanceWindow:
+    Type: AWS::SSM::MaintenanceWindow
+    Properties:
+      AllowUnassociatedTargets: false
+      Cutoff: 1
+      Duration: 2
+      Description: Maintenance Window to update linux instances
+      Name: UpdateWindowsInstancesSSMAgentMaintenanceWindow
+      Schedule: cron(0 0 ? * SAT *)
+      ScheduleTimezone: Europe/London
+
+  UpdateWindowsInstancesSSMAgentMaintenanceWindowTarget:
+    Type: AWS::SSM::MaintenanceWindowTarget
+    Properties:
+      ResourceType: INSTANCE
+      Targets:
+        - Key: tag:PatchGroup
+          Values:
+            - Windows
+      WindowId: !Ref UpdateWindowsInstancesSSMAgentMaintenanceWindow
+
+  UpdateWindowsInstancesSSMAgentTask:
+    Type: AWS::SSM::MaintenanceWindowTask
+    Properties:
+      Description: Apply OS patches on instances in target
+      MaxConcurrency: 7
+      MaxErrors: 1
+      Priority: 1
+      TaskType: RUN_COMMAND
+      WindowId: !Ref UpdateWindowsInstancesSSMAgentMaintenanceWindow
+      TaskArn: AWS-UpdateSSMAgent
+      Targets:
+        - Key: WindowTargetIds
+          Values:
+            - !Ref UpdateWindowsInstancesSSMAgentMaintenanceWindowTarget
+
+  UpdateWindowsInstancesMaintenanceWindow:
+    Type: AWS::SSM::MaintenanceWindow
+    Properties:
+      AllowUnassociatedTargets: false
+      Cutoff: 1
+      Duration: 5
+      Description: Maintenance Window to update linux instances
+      Name: UpdateWindowsInstancesMaintenanceWindow
+      Schedule: cron(0 3 ? * SUN *)
+      ScheduleTimezone: Europe/London
+
+  UpdateWindowsInstancesMaintenanceWindowTarget:
+    Type: AWS::SSM::MaintenanceWindowTarget
+    Properties:
+      ResourceType: INSTANCE
+      Targets:
+        - Key: tag:PatchGroup
+          Values:
+            - Windows
+      WindowId: !Ref UpdateWindowsInstancesMaintenanceWindow
+
+  UpdateWindowsInstancesTask:
+    Type: AWS::SSM::MaintenanceWindowTask
+    Properties:
+      Description: Apply OS patches on instances in target
+      MaxConcurrency: 1
+      MaxErrors: 1
+      Priority: 0
+      TaskType: RUN_COMMAND
+      WindowId: !Ref UpdateWindowsInstancesMaintenanceWindow
+      TaskArn: AWS-RunPatchBaseline
+      TaskInvocationParameters:
+        MaintenanceWindowRunCommandParameters:
+          Comment: Running security updates for OS with no reboot
+          Parameters:
+            Operation:
+              - Install
+      Targets:
+        - Key: WindowTargetIds
+          Values:
+            - !Ref UpdateWindowsInstancesMaintenanceWindowTarget

@@ -1,0 +1,49 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: DataLake Infrastructure Setup Template
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  CustomResourceLambdaExecutionRoleArn:
+    Type: String
+    Description: Custom Resource Lambda Execution Role Arn.
+
+Resources:
+
+  RDSKey:
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: !Sub "This is ${EnvironmentPrefix} environment customer managed CMK for Redshift Data at rest encrytion."
+      EnableKeyRotation: true
+      Enabled: true
+      KeyPolicy:
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Ref CustomResourceLambdaExecutionRoleArn
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          -
+            Effect: Allow
+            Sid: Allow administration of the key
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action:
+              - "kms:*"
+            Resource: "*"
+      PendingWindowInDays: 7
+
+Outputs:
+  RDSKey:
+    Description: RDS KMS Key
+    Value: !Ref RDSKey
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-RDSKey"

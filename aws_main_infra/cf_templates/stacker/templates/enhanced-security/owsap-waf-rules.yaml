@@ -1,0 +1,1061 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Amazon EKS HP VPC NodeGroup
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: Dev
+    Description: Prefix for Env Name
+  IncludesPrefix:
+    Type: String
+    Description: This is the URI path prefix (starting with '/') that identifies any files in your webroot that are server-side included components, and should not be invoked directly via URL. These can be headers, footers, 3rd party server side libraries or components. You can add additional prefixes later directly in the set.
+    Default: /includes
+  BlacklistCidrs:
+    Type: CommaDelimitedList
+    Description: This is the IP address allowed to blacklist the access.
+    Default: 127.0.0.1/32
+  MaxExpectedURISize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the URI component of the HTTP request. Generally the maximum possible value is determined by the server operating system (maps to file system paths), the web server software, or other middleware components. Choose a value that accomodates the largest URI segment you use in practice in your web application.
+    Default: 512
+  MaxExpectedQueryStringSize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the query string component of the HTTP request. Normally the  of query string parameters following the "?" in a URL is much larger than the URI , but still bounded by the  of the parameters your web application uses and their values.
+    Default: 1024
+  MaxExpectedOSBodySize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the body of the request. If you do not plan to allow large uploads, set it to the largest payload value that makes sense for your web application. Accepting unnecessarily large values can cause performance issues, if large payloads are used as an attack vector against your web application.
+    Default: 4096
+  MaxExpectedBodySize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the body of the request. If you do not plan to allow large uploads, set it to the largest payload value that makes sense for your web application. Accepting unnecessarily large values can cause performance issues, if large payloads are used as an attack vector against your web application.
+    Default: 4096
+  MaxExpectedCookieSize:
+    Type: Number
+    Description: Maximum number of bytes allowed in the cookie header. The maximum size should be less than 4096, the size is determined by the amount of information your web application stores in cookies. If you only pass a session token via cookies, set the size to no larger than the serialized size of the session token and cookie metadata.
+    Default: 4093
+  CsrfExpectedHeader:
+    Type: String
+    Description: The custom HTTP request header, where the CSRF token value is expected to be encountered
+    Default: x-csrftoken
+  CsrfExpectedSize:
+    Type: Number
+    Description: The size in bytes of the CSRF token value. For example if it's a canonically formatted UUIDv4 value the expected size would be 36 bytes/ASCII characters
+    Default: 36
+  MambuCidrs:
+    Type: CommaDelimitedList
+    Description: IP list for mambu environment.
+
+Resources:
+  xyzMambuIPSet:
+    Type: 'AWS::WAFv2::IPSet'
+    Properties:
+      Description: IP Cidrs for Mambu.
+      Name: !Sub "${EnvironmentPrefix}-xyz-MambuIPSet"
+      Scope: REGIONAL
+      IPAddressVersion: IPV4
+      Addresses: !Ref MambuCidrs
+
+  xyzBlacklistIPSet:
+    Type: 'AWS::WAFv2::IPSet'
+    Properties:
+      Description: IP Cidrs to blacklist.
+      Name: !Sub "${EnvironmentPrefix}-xyz-BlacklistIPSet"
+      Scope: REGIONAL
+      IPAddressVersion: IPV4
+      Addresses: !Ref BlacklistCidrs
+
+  OSOWSAPWAFRuleGroup:
+    Type: AWS::WAFv2::RuleGroup
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-xyz-OS-OwsapRuleGroup"
+      Capacity: 1500
+      Scope: REGIONAL
+      Description: This is the xyz OWSAP Rule Group
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub "${EnvironmentPrefix}-xyz-OS-OwsapRuleGroupMetric"
+      Rules:
+        - Name: SQLInjectInputsRules
+          Priority: 1
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: SQLInjectInputsRulesMetric
+          Statement:
+            OrStatement:
+              Statements:
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      Body: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      Body: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+        - Name: AuthTokenRules
+          Priority: 2
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AuthTokenRulesMetric
+          Statement:
+            OrStatement:
+              Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    PositionalConstraint: CONTAINS
+                    SearchString: example-session-id
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: authorization
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+        - Name: XssRules
+          Priority: 3
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: XssRulesMetric
+          Statement:
+            OrStatement:
+              Statements:
+                - XssMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      Body: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      Body: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+        - Name: LFIRFIRules
+          Priority: 4
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: LFIRFIRulesMetric
+          Statement:
+            OrStatement:
+              Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ../
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ../
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ../
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ../
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ://
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ://
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ://
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ://
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+        - Name: PHPServerRules
+          Priority: 7
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: PHPServerRulesMetric
+          Statement:
+            AndStatement:
+              Statements:
+                - OrStatement:
+                    Statements:
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: _SERVER[
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: _ENV[
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: auto_prepend_file=
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: auto_append_file=
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: allow_url_include=
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: disable_functions=
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: open_basedir=
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: safe_mode=
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                - OrStatement:
+                    Statements:
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            UriPath: {}
+                          PositionalConstraint: ENDS_WITH
+                          SearchString: php
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            UriPath: {}
+                          PositionalConstraint: ENDS_WITH
+                          SearchString: /
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+        - Name: SizeRestrictRules
+          Priority: 8
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: SizeRestrictRulesMetric
+          Statement:
+            OrStatement:
+              Statements:
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    ComparisonOperator: GT
+                    Size: !Ref MaxExpectedURISize
+                    TextTransformations:
+                      - Priority: 0
+                        Type: NONE
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    ComparisonOperator: GT
+                    Size: !Ref MaxExpectedQueryStringSize
+                    TextTransformations:
+                      - Priority: 0
+                        Type: NONE
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      Body: {}
+                    ComparisonOperator: GT
+                    Size: !Ref MaxExpectedOSBodySize
+                    TextTransformations:
+                      - Priority: 0
+                        Type: NONE
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    ComparisonOperator: GT
+                    Size: !Ref MaxExpectedCookieSize
+                    TextTransformations:
+                      - Priority: 0
+                        Type: NONE
+        - Name: CSRFRules
+          Priority: 9
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: CSRFMethodRulesMetric
+          Statement:
+            AndStatement:
+              Statements:
+                - NotStatement:
+                    Statement:
+                      SizeConstraintStatement:
+                        FieldToMatch:
+                          SingleHeader:
+                            Name: !Ref CsrfExpectedHeader
+                        ComparisonOperator: EQ
+                        Size: !Ref CsrfExpectedSize
+                        TextTransformations:
+                          - Priority: 0
+                            Type: NONE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      Method: {}
+                    PositionalConstraint: EXACTLY
+                    SearchString: post
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+        - Name: BlockWebRootRules
+          Priority: 10
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: BlockWebRootRulesMetric
+          Statement:
+            OrStatement:
+              Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .backup
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .bak
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .log
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .ini
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .config
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .conf
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .cfg
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: STARTS_WITH
+                    SearchString: !Ref IncludesPrefix
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+        - Name: BlacklistRules
+          Priority: 11
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: BlacklistRulesMetric
+          Statement:
+            IPSetReferenceStatement:
+              Arn: !GetAtt xyzBlacklistIPSet.Arn
+
+  ILOWSAPWAFRuleGroup:
+    Type: AWS::WAFv2::RuleGroup
+    Properties:
+      Name: !Sub "${EnvironmentPrefix}-xyz-IL-OwsapRuleGroup"
+      Capacity: 1500
+      Scope: REGIONAL
+      Description: This is the xyz OWSAP Rule Group
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub "${EnvironmentPrefix}-xyz-IL-OwsapRuleGroupMetric"
+      Rules:
+        - Name: SQLInjectInputsRules
+          Priority: 1
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: SQLInjectInputsRulesMetric
+          Statement:
+            OrStatement:
+              Statements:
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      Body: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      Body: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - SqliMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+        - Name: AuthTokenRules
+          Priority: 2
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AuthTokenRulesMetric
+          Statement:
+            OrStatement:
+              Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    PositionalConstraint: CONTAINS
+                    SearchString: example-session-id
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: authorization
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+        - Name: XssRules
+          Priority: 3
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: XssRulesMetric
+          Statement:
+            OrStatement:
+              Statements:
+                - XssMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      Body: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      Body: {}
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - XssMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+        - Name: LFIRFIRules
+          Priority: 4
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: LFIRFIRulesMetric
+          Statement:
+            OrStatement:
+              Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ../
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ../
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ../
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ../
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ://
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ://
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ://
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    PositionalConstraint: CONTAINS
+                    SearchString: ://
+                    TextTransformations:
+                      - Priority: 0
+                        Type: HTML_ENTITY_DECODE
+        - Name: PHPServerRules
+          Priority: 7
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: PHPServerRulesMetric
+          Statement:
+            AndStatement:
+              Statements:
+                - OrStatement:
+                    Statements:
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: _SERVER[
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: _ENV[
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: auto_prepend_file=
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: auto_append_file=
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: allow_url_include=
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: disable_functions=
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: open_basedir=
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            QueryString: {}
+                          PositionalConstraint: CONTAINS
+                          SearchString: safe_mode=
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                - OrStatement:
+                    Statements:
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            UriPath: {}
+                          PositionalConstraint: ENDS_WITH
+                          SearchString: php
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+                      - ByteMatchStatement:
+                          FieldToMatch:
+                            UriPath: {}
+                          PositionalConstraint: ENDS_WITH
+                          SearchString: /
+                          TextTransformations:
+                            - Priority: 0
+                              Type: URL_DECODE
+        - Name: SizeRestrictRules
+          Priority: 8
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: SizeRestrictRulesMetric
+          Statement:
+            OrStatement:
+              Statements:
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    ComparisonOperator: GT
+                    Size: !Ref MaxExpectedURISize
+                    TextTransformations:
+                      - Priority: 0
+                        Type: NONE
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      QueryString: {}
+                    ComparisonOperator: GT
+                    Size: !Ref MaxExpectedQueryStringSize
+                    TextTransformations:
+                      - Priority: 0
+                        Type: NONE
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      Body: {}
+                    ComparisonOperator: GT
+                    Size: !Ref MaxExpectedBodySize
+                    TextTransformations:
+                      - Priority: 0
+                        Type: NONE
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: cookie
+                    ComparisonOperator: GT
+                    Size: !Ref MaxExpectedCookieSize
+                    TextTransformations:
+                      - Priority: 0
+                        Type: NONE
+        - Name: CSRFRules
+          Priority: 9
+          Action:
+            Count: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: CSRFMethodRulesMetric
+          Statement:
+            AndStatement:
+              Statements:
+                - NotStatement:
+                    Statement:
+                      SizeConstraintStatement:
+                        FieldToMatch:
+                          SingleHeader:
+                            Name: !Ref CsrfExpectedHeader
+                        ComparisonOperator: EQ
+                        Size: !Ref CsrfExpectedSize
+                        TextTransformations:
+                          - Priority: 0
+                            Type: NONE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      Method: {}
+                    PositionalConstraint: EXACTLY
+                    SearchString: post
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+        - Name: BlockWebRootRules
+          Priority: 10
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: BlockWebRootRulesMetric
+          Statement:
+            OrStatement:
+              Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .backup
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .bak
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .log
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .ini
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .config
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .conf
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: ENDS_WITH
+                    SearchString: .cfg
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: STARTS_WITH
+                    SearchString: !Ref IncludesPrefix
+                    TextTransformations:
+                      - Priority: 0
+                        Type: URL_DECODE
+        - Name: BlacklistRules
+          Priority: 11
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: BlacklistRulesMetric
+          Statement:
+            IPSetReferenceStatement:
+              Arn: !GetAtt xyzBlacklistIPSet.Arn
+
+Outputs:
+  WAFRuleGroup:
+    Description: The WAFRuleGroup for owsap rules
+    Value: !GetAtt OSOWSAPWAFRuleGroup.Arn
+  ILWAFRuleGroup:
+    Description: The IL WAFRuleGroup for owsap rules
+    Value: !GetAtt ILOWSAPWAFRuleGroup.Arn

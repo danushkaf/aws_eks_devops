@@ -1,0 +1,619 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "This has cognito userpools for OutSystems"
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    AllowedValues:
+      - dev
+      - qa
+      - uat
+      - prod
+  OSVPCID:
+    Type: String
+    Description: OS VPC ID
+  UserPoolCognitoDomain:
+    Type: String
+    Description: Custom Domain for cognito user pool
+  ScopePoolCognitoDomain:
+    Type: String
+    Description: Custom Domain for cognito scope pool
+  CertificateArn:
+    Type: String
+    Description: Certificate for Custom Domain for cognito user pool
+  ScopePoolCertificateArn:
+    Type: String
+    Description: Certificate for Custom Domain for cognito scope pool
+  UserPoolTempPasswordValidityDays:
+    Type: Number
+    Default: 1
+  ScopePoolTempPasswordValidityDays:
+    Type: Number
+    Default: 7
+  CallbackURLs:
+    Type: String
+    Description: Callback urls for the User pool app client
+  SignOutUrls:
+    Type: String
+    Description: Signout urls for the User pool app client
+  UserPoolRefreshTokenValidityTime:
+    Type: Number
+    Default: 30
+  UserPoolAccessTokenValidityTime:
+    Type: Number
+    Default: 1
+  UserPoolIdTokenValidityTime:
+    Type: Number
+    Default: 1
+  UserPoolRefreshTokenValidityTimeUnit:
+    Type: String
+    Default: minutes
+  UserPoolAccessTokenValidityTimeUnit:
+    Type: String
+    Default: minutes
+  UserPoolIdTokenValidityTimeUnit:
+    Type: String
+    Default: minutes
+  ScopePoolRefreshTokenValidityDays:
+    Type: Number
+    Default: 30
+  ScopePoolAccessTokenValidityHours:
+    Type: Number
+    Default: 1
+  ScopePoolIdTokenValidityHours:
+    Type: Number
+    Default: 1
+  LambdaS3BucketName:
+    Type: String
+    Description: Lambda Code zip file S3 bucket name
+  OSValidationLambdaMemorySizeMB:
+    Type: Number
+    Default: 1028
+    Description: Lambda max MemorySize in MB
+  OSValidationLambdaTimeoutSeconds:
+    Type: Number
+    Default: 30
+    Description: Lambda timeout value
+  OSValidationLambdaS3FileName:
+    Type: String
+    Default: 'os-validation-lambda.zip'
+    Description: Lambda Code zip filename in S3
+  OSSignupLambdaMemorySizeMB:
+    Type: Number
+    Default: 1028
+    Description: Lambda max MemorySize in MB
+  OSSignupLambdaTimeoutSeconds:
+    Type: Number
+    Default: 30
+    Description: Lambda timeout value
+  OSSignupLambdaS3FileName:
+    Type: String
+    Default: 'os-validation-lambda.zip'
+    Description: Lambda Code zip filename in S3
+  OSChangeUsernameLambdaMemorySizeMB:
+    Type: Number
+    Default: 1028
+    Description: Lambda max MemorySize in MB
+  OSChangeUsernameLambdaTimeoutSeconds:
+    Type: Number
+    Default: 30
+    Description: Lambda timeout value
+  OSChangeUsernameLambdaS3FileName:
+    Type: String
+    Default: 'os-validation-lambda.zip'
+    Description: Lambda Code zip filename in S3
+  OSResetPasswordLambdaMemorySizeMB:
+    Type: Number
+    Default: 1028
+    Description: Lambda max MemorySize in MB
+  OSResetPasswordLambdaTimeoutSeconds:
+    Type: Number
+    Default: 30
+    Description: Lambda timeout value
+  OSResetPasswordLambdaS3FileName:
+    Type: String
+    Default: 'os-validation-lambda.zip'
+    Description: Lambda Code zip filename in S3
+  UserPoolAdvancedSecurityMode:
+    Type: String
+    Default: AUDIT
+    Description: User pool advanced security mode
+  ScopePoolAdvancedSecurityMode:
+    Type: String
+    Default: OFF
+    Description: Scope pool advanced security mode
+  GetDomainAliasTargetLambdaS3FileName:
+    Type: String
+    Default: 'userpool-getcustomdomain-custom-resource.zip'
+    Description: Lambda Code zip filename in S3
+  WaitAliasTargetLambdaS3FileName:
+    Type: String
+    Default: 'userpool-wait-custom-resource.zip'
+    Description: Lambda Code zip filename in S3
+  LambdaKeyArn:
+    Type: String
+    Description: Arn of Lambda Key
+Conditions:
+  HasUserPoolCognitoDomain: !Not [!Equals [!Ref UserPoolCognitoDomain, '']]
+  HasScopePoolCognitoDomain: !Not [!Equals [!Ref ScopePoolCognitoDomain, '']]
+  HasCertificate: !Not [!Equals [!Ref CertificateArn, '']]
+  HasScopePoolCertificate: !Not [!Equals [!Ref ScopePoolCertificateArn, '']]
+
+Resources:
+  UserPool:
+    Type: "AWS::Cognito::UserPool"
+    Properties:
+      UserPoolName: !Sub "${EnvironmentPrefix}-UserPool"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: !Ref UserPoolTempPasswordValidityDays
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+          - Name: verified_phone_number
+            Priority: 2
+      AutoVerifiedAttributes:
+        - email
+      UsernameConfiguration:
+        CaseSensitive: false
+      MfaConfiguration: "OFF"
+      EmailConfiguration:
+        EmailSendingAccount: "COGNITO_DEFAULT"
+      VerificationMessageTemplate:
+        DefaultEmailOption: "CONFIRM_WITH_CODE"
+      UsernameAttributes:
+        - email
+      UserPoolAddOns:
+        AdvancedSecurityMode: !Ref UserPoolAdvancedSecurityMode
+      Schema:
+        -
+          Name: "sub"
+          AttributeDataType: "String"
+          DeveloperOnlyAttribute: false
+          Mutable: false
+          Required: true
+          StringAttributeConstraints:
+              MinLength: "1"
+              MaxLength: "2048"
+        -
+          Name: "email"
+          AttributeDataType: "String"
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Required: true
+          StringAttributeConstraints:
+              MinLength: "0"
+              MaxLength: "2048"
+
+  UserPoolDomain:
+    Condition: HasUserPoolCognitoDomain
+    Type: "AWS::Cognito::UserPoolDomain"
+    Properties:
+      CustomDomainConfig: !If
+        - HasCertificate
+        - CertificateArn: !Ref CertificateArn
+        - !Ref AWS::NoValue
+      UserPoolId: !Ref UserPool
+      Domain: !Ref UserPoolCognitoDomain
+
+  UserPoolAppClient:
+    Type: "AWS::Cognito::UserPoolClient"
+    Properties:
+      SupportedIdentityProviders:
+        - COGNITO
+      ClientName: UserClient
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      CallbackURLs: !Split [ "," , !Ref CallbackURLs ]
+      LogoutURLs: !Split [ "," , !Ref SignOutUrls ]
+      AllowedOAuthFlows:
+        - code
+        - implicit
+      AllowedOAuthScopes:
+        - phone
+        - email
+        - openid
+        - profile
+        - aws.cognito.signin.user.admin
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      RefreshTokenValidity: !Ref UserPoolRefreshTokenValidityTime
+      AccessTokenValidity: !Ref UserPoolAccessTokenValidityTime
+      IdTokenValidity: !Ref UserPoolIdTokenValidityTime
+      PreventUserExistenceErrors: ENABLED
+      AllowedOAuthFlowsUserPoolClient: true
+      TokenValidityUnits:
+        AccessToken: !Ref UserPoolAccessTokenValidityTimeUnit
+        IdToken: !Ref UserPoolIdTokenValidityTimeUnit
+        RefreshToken: !Ref UserPoolRefreshTokenValidityTimeUnit
+
+  ScopePool:
+    Type: "AWS::Cognito::UserPool"
+    Properties:
+      UserPoolName: !Sub "${EnvironmentPrefix}-Scope-Pool"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: !Ref ScopePoolTempPasswordValidityDays
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+          - Name: verified_phone_number
+            Priority: 2
+      AutoVerifiedAttributes:
+        - email
+      UsernameConfiguration:
+        CaseSensitive: false
+      MfaConfiguration: "OFF"
+      EmailConfiguration:
+        EmailSendingAccount: "COGNITO_DEFAULT"
+      VerificationMessageTemplate:
+        DefaultEmailOption: "CONFIRM_WITH_CODE"
+      UserPoolAddOns:
+        AdvancedSecurityMode: !Ref ScopePoolAdvancedSecurityMode
+      Schema:
+        -
+          Name: "sub"
+          AttributeDataType: "String"
+          DeveloperOnlyAttribute: false
+          Mutable: false
+          Required: true
+          StringAttributeConstraints:
+              MinLength: "1"
+              MaxLength: "2048"
+        -
+          Name: "email"
+          AttributeDataType: "String"
+          DeveloperOnlyAttribute: false
+          Mutable: true
+          Required: true
+          StringAttributeConstraints:
+              MinLength: "0"
+              MaxLength: "2048"
+
+  ScopePoolDomain:
+    Condition: HasScopePoolCognitoDomain
+    Type: "AWS::Cognito::UserPoolDomain"
+    Properties:
+      CustomDomainConfig: !If
+        - HasScopePoolCertificate
+        - CertificateArn: !Ref ScopePoolCertificateArn
+        - !Ref AWS::NoValue
+      UserPoolId: !Ref ScopePool
+      Domain: !Ref ScopePoolCognitoDomain
+
+  ScopePoolAppClient:
+    Type: "AWS::Cognito::UserPoolClient"
+    Properties:
+      SupportedIdentityProviders:
+        - COGNITO
+      ClientName: M2M
+      UserPoolId: !Ref ScopePool
+      GenerateSecret: true
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthScopes:
+        - !Join [ "/", [ !Ref ScopePoolAccountsResourceServer, accesstokenscope  ]  ]
+        - !Join [ "/", [ !Ref ScopePoolAccountsResourceServer, tokenidscope  ]  ]
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_USER_SRP_AUTH
+      RefreshTokenValidity: !Ref ScopePoolRefreshTokenValidityDays
+      AccessTokenValidity: !Ref ScopePoolAccessTokenValidityHours
+      IdTokenValidity: !Ref ScopePoolIdTokenValidityHours
+      PreventUserExistenceErrors: ENABLED
+      AllowedOAuthFlowsUserPoolClient: true
+
+  ScopePoolAccountsResourceServer:
+    Type: "AWS::Cognito::UserPoolResourceServer"
+    Properties:
+      UserPoolId: !Ref ScopePool
+      Identifier: m2m
+      Scopes:
+        - ScopeName: accesstokenscope
+          ScopeDescription: "use accesstoken lambda"
+        - ScopeName: tokenidscope
+          ScopeDescription: "use aws cognito authorizer"
+      Name: m2m
+
+  ValidationLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - apigateway.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonCognitoPowerUser'
+      Path: /
+
+  OSValidationLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentPrefix}-OS-validation-lambda-function'
+      Runtime: python3.8
+      Role: !GetAtt ValidationLambdaExecutionRole.Arn
+      Handler: lambda_function.lambda_handler
+      MemorySize: !Ref OSValidationLambdaMemorySizeMB
+      Timeout: !Ref OSValidationLambdaTimeoutSeconds
+      KmsKeyArn: !Ref LambdaKeyArn
+      Environment:
+        Variables:
+          userpool_id: !Ref UserPool
+          app_client_id: !Ref UserPoolAppClient
+      Code:
+        S3Bucket: !Sub ${LambdaS3BucketName}
+        S3Key: !Sub ${OSValidationLambdaS3FileName}
+      Description: OutSystems validation lambda for cognito integration
+
+  APIGatewayInvokeFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - "OSValidationLambdaFunction"
+          - "Arn"
+      Action: 'lambda:InvokeFunction'
+      Principal: !Sub 'apigateway.amazonaws.com'
+      SourceArn: !Join [
+        ":", [
+          "arn:aws:execute-api",
+          {"Ref": "AWS::Region"},
+          {"Ref": "AWS::AccountId"},
+          "*"
+          ]
+        ]
+
+  SignupLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - apigateway.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonCognitoPowerUser'
+      Path: /
+
+  OSSignupLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentPrefix}-OS-signup-lambda'
+      Runtime: nodejs12.x
+      Role: !GetAtt SignupLambdaExecutionRole.Arn
+      Handler: index.handler
+      MemorySize: !Ref OSSignupLambdaMemorySizeMB
+      Timeout: !Ref OSSignupLambdaTimeoutSeconds
+      KmsKeyArn: !Ref LambdaKeyArn
+      Environment:
+        Variables:
+          userpool_id: !Ref UserPool
+          app_client_id: !Ref UserPoolAppClient
+      Code:
+        S3Bucket: !Sub ${LambdaS3BucketName}
+        S3Key: !Sub ${OSSignupLambdaS3FileName}
+      Description: OutSystems signup lambda for cognito integration
+
+  APIGatewaySignupInvokeFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - "OSSignupLambdaFunction"
+          - "Arn"
+      Action: 'lambda:InvokeFunction'
+      Principal: !Sub 'apigateway.amazonaws.com'
+      SourceArn: !Join [
+        ":", [
+          "arn:aws:execute-api",
+          {"Ref": "AWS::Region"},
+          {"Ref": "AWS::AccountId"},
+          "*"
+          ]
+        ]
+
+  ResetLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - apigateway.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonCognitoPowerUser'
+      Path: /
+
+  OSResetPasswordLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentPrefix}-OS-resetpassword-lambda'
+      Runtime: nodejs12.x
+      Role: !GetAtt ResetLambdaExecutionRole.Arn
+      Handler: index.handler
+      MemorySize: !Ref OSResetPasswordLambdaMemorySizeMB
+      Timeout: !Ref OSResetPasswordLambdaTimeoutSeconds
+      KmsKeyArn: !Ref LambdaKeyArn
+      Environment:
+        Variables:
+          userpool_id: !Ref UserPool
+          app_client_id: !Ref UserPoolAppClient
+      Code:
+        S3Bucket: !Sub ${LambdaS3BucketName}
+        S3Key: !Sub ${OSResetPasswordLambdaS3FileName}
+      Description: OutSystems change password for cognito integration
+
+  APIGatewayResetPasswordInvokeFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - "OSResetPasswordLambdaFunction"
+          - "Arn"
+      Action: 'lambda:InvokeFunction'
+      Principal: !Sub 'apigateway.amazonaws.com'
+      SourceArn: !Join [
+        ":", [
+          "arn:aws:execute-api",
+          {"Ref": "AWS::Region"},
+          {"Ref": "AWS::AccountId"},
+          "*"
+          ]
+        ]
+
+  ChangeUnameLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - apigateway.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonCognitoPowerUser'
+      Path: /
+
+  OSChangeUsernameLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentPrefix}-OS-changeusername-lambda'
+      Runtime: nodejs12.x
+      Role: !GetAtt ChangeUnameLambdaExecutionRole.Arn
+      Handler: index.handler
+      MemorySize: !Ref OSChangeUsernameLambdaMemorySizeMB
+      Timeout: !Ref OSChangeUsernameLambdaTimeoutSeconds
+      KmsKeyArn: !Ref LambdaKeyArn
+      Environment:
+        Variables:
+          userpool_id: !Ref UserPool
+      Code:
+        S3Bucket: !Sub ${LambdaS3BucketName}
+        S3Key: !Sub ${OSChangeUsernameLambdaS3FileName}
+      Description: OutSystems change username lambda for cognito integration
+
+  APIGatewayChangePasswordInvokeFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - "OSChangeUsernameLambdaFunction"
+          - "Arn"
+      Action: 'lambda:InvokeFunction'
+      Principal: !Sub 'apigateway.amazonaws.com'
+      SourceArn: !Join [
+        ":", [
+          "arn:aws:execute-api",
+          {"Ref": "AWS::Region"},
+          {"Ref": "AWS::AccountId"},
+          "*"
+          ]
+        ]
+
+  GetDomainLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - apigateway.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonCognitoPowerUser'
+      Path: /
+
+  GetDomainAliasLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${EnvironmentPrefix}-get-cognito-alias-target-lambda'
+      Runtime: python3.7
+      Role: !GetAtt GetDomainLambdaExecutionRole.Arn
+      Handler: index.handler
+      MemorySize: 1024
+      Timeout: 60
+      KmsKeyArn: !Ref LambdaKeyArn
+      Environment:
+        Variables:
+          user_pool_domain: !Ref UserPoolCognitoDomain
+      Code:
+        S3Bucket: !Ref LambdaS3BucketName
+        S3Key: !Ref GetDomainAliasTargetLambdaS3FileName
+      Description: Lambda to back custom resource to get cognito alias target.
+
+  GetDomainAlias:
+    DependsOn: UserPoolDomain
+    Type: Custom::GetDomainAlias
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - GetDomainAliasLambda
+        - Arn
+      Region:
+        Ref: AWS::Region
+
+Outputs:
+  OSValidationLambdaFunction:
+    Value: !GetAtt OSValidationLambdaFunction.Arn
+  OSSignupLambdaFunction:
+    Value: !GetAtt OSSignupLambdaFunction.Arn
+  OSResetPasswordLambdaFunction:
+    Value: !GetAtt OSResetPasswordLambdaFunction.Arn
+  OSChangeUsernameLambdaFunction:
+    Value: !GetAtt OSChangeUsernameLambdaFunction.Arn
+  UserPoolDomainTarget:
+    Value: !Ref GetDomainAlias

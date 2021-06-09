@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS resources for the Notification service.
+Parameters:
+  AWSDNSName:
+    Type: String
+    Description: "AWS DNS Name"
+  BusinessDNSName:
+    Type: String
+    Description: "Business DNS Name"
+  HostedZoneName:
+    Type: String
+    Description: "Business HostedZone Name"
+  AWSHostedZoneID:
+    Type: String
+    Description: "AWS HostedZone ID"
+Resources:
+  DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+        DNSName: !Ref AWSDNSName
+        EvaluateTargetHealth: true
+        HostedZoneId: !Ref AWSHostedZoneID
+      Name: !Ref BusinessDNSName
+      HostedZoneName:  !Ref HostedZoneName
+      Type: A
